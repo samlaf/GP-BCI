@@ -1,14 +1,23 @@
+"""
+We first learn the 1D GP.
+The difference here with gp-2d-diff is that instead of learning the diff function (f-prior), we learn f directly but instead of initially querying n random points, we query the points that we think the 2d function will be minimum (by using our prior and assuming independence).
+
+The problem with this approach is that we still have a lot of uncertainty in areas far from these "good" starting points, which we will need to "waste" time exploring (whereas the diff approach assumes that the difference will be a low order polynomial which we can completely learn by only querying in the "good" region... is the brain really this simple?)
+"""
+
 import numpy as np
 import skopt
 from skopt import gp_minimize
 from skopt.plots import plot_convergence, plot_evaluations, plot_objective
 from skopt.learning import GaussianProcessRegressor as GPR
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from skopt.space import Real, Integer
 import itertools
 
 noise_level = 0.1
 n_dims = 1
+np.random.seed(1234)
 
 def f(x, noise_level=noise_level):
     return np.sin(x[0]) * (x[0]-2) + np.random.randn() * noise_level
@@ -29,13 +38,13 @@ gpr = skopt.learning.GaussianProcessRegressor(
             normalize_y          = True,
             noise                = noise_level,
             n_restarts_optimizer = 2)
-# resf = gp_minimize(f,
-#                    spacef,
-#                    base_estimator=gpr,
-#                    acq_func="EI",
-#                    n_calls=10,
-#                    n_random_starts=5,
-#                    noise=noise_level**2)
+resf = gp_minimize(f,
+                   spacef,
+                   base_estimator=gpr,
+                   acq_func="EI",
+                   n_calls=25,
+                   n_random_starts=5,
+                   noise=noise_level**2)
 
 # TEST
 for m in resf.models:
@@ -52,16 +61,16 @@ surrogate_m = resf.models[-1]
 x_gp = resf.space.transform(x)
 y_pred, sigma = surrogate_m.predict(x_gp, return_std=True)
 
-# plt.plot(x, fx, "r:", label="f(x) = (x-3)sin(x) + eps")
-# plt.plot(resf.x_iters, resf.func_vals, 'r.', markersize=10, label='Observations')
-# plt.plot(x, y_pred, 'b-', label=u'Prediction')
-# plt.fill(np.concatenate([x, x[::-1]]),
-#          np.concatenate([y_pred - 1.9600 * sigma,
-#                          (y_pred + 1.9600 * sigma)[::-1]]),
-#          alpha=.5, fc="b", ec="None")
-# plt.legend()
-# plt.grid(False)
-# plt.show()
+plt.plot(x, fx, "r:", label="f(x) = (x-3)sin(x) + eps")
+plt.plot(resf.x_iters, resf.func_vals, 'r.', markersize=10, label='Observations')
+plt.plot(x, y_pred, 'b-', label=u'Prediction')
+plt.fill(np.concatenate([x, x[::-1]]),
+         np.concatenate([y_pred - 1.9600 * sigma,
+                         (y_pred + 1.9600 * sigma)[::-1]]),
+         alpha=.5, fc="b", ec="None")
+plt.legend()
+plt.grid(False)
+plt.show()
 
 
 ##### -------------------------------------------------- #####
@@ -77,20 +86,30 @@ flattenedy = np.array(resf.func_vals)
 ypairs = list(itertools.product(flattenedy,flattenedy))
 y0 = [a+b for (a,b) in ypairs]
 
+# Here we only take the first 2 higher value points
+xyall = list(zip(flattenedx, flattenedy))
+xs = list(set(flattenedx))
+xysingle = []
+for x in xs:
+    vals = [y for xx,y in xyall if xx==x]
+    xysingle.append((x,max(vals)))
+xysinglemax = sorted(xysingle, key=lambda x: x[1])
+x0 = [x for x,y in xysinglemax[:2]]
+x0 = list(itertools.product(x0,x0))
+
 resg_prior = gp_minimize(g,
                    spaceg,
                    acq_func="EI",
                    n_calls=50,
                    n_random_starts=5,
                    noise=100*noise_level**2,
-                   x0=x0,
-                   y0=y0)
-# resg = gp_minimize(g,
-#                    spaceg,
-#                    acq_func="EI",
-#                    n_calls=50,
-#                    n_random_starts=5,
-#                    noise=noise_level**2)
+                   x0=x0)
+resg = gp_minimize(g,
+                   spaceg,
+                   acq_func="EI",
+                   n_calls=50,
+                   n_random_starts=5,
+                   noise=noise_level**2)
 
 x = np.arange(-8,8,.1)
 y = np.arange(-8,8,.1)
@@ -116,4 +135,6 @@ ax.plot(x_scat[:n_prior], y_scat[:n_prior], z_scat_prior[:n_prior], 'b.', marker
 #                        #cmap=cm.coolwarm,
 #                        linewidth=0, antialiased=False)
 plt.legend()
+plt.figure()
+plot_convergence(("prior",resg_prior), ("from scratch", resg))
 plt.show()

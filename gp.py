@@ -1,80 +1,107 @@
+"""
+Here we make tests to see how many queries it takes for a GP to learn low order polynomial functions (we can change the order of the polynomial in f -- x[0]**n)
+"""
+
 import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
+from skopt.acquisition import gaussian_ei
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 
-noise_level=0.1
+noise_level = 0.1
+XLIM = 8
 
-def f1(x, noise_level=noise_level):
-    return np.sin(x[0]) * (x[0]-3) + np.random.randn() * noise_level
-def f_helper(x,y,noise_level=noise_level):
-    return foo([x,y])
 def f(x, noise_level=noise_level):
-    return f1([x[0]]) + f1([x[1]]) +  1/5*x[0]*x[1] + np.random.randn() * noise_level
-def foo(x, noise_level=noise_level):
-    return f1([x[0]]) + f1([x[1]]) + np.random.randn() * noise_level
+    return np.sin(x[0]) * (x[0]-2) + np.random.randn() * noise_level
+
+# Plot f(x) + contours
+# x = np.linspace(-8, 8, 400).reshape(-1, 1)
+# fx = [f(x_i, noise_level=0.0) for x_i in x]
+# plt.plot(x, fx, "r--", label="True (unknown)")
+# plt.fill(np.concatenate([x, x[::-1]]),
+#          np.concatenate(([fx_i - 1.9600 * noise_level for fx_i in fx], 
+#                          [fx_i + 1.9600 * noise_level for fx_i in fx[::-1]])),
+#          alpha=.2, fc="r", ec="None")
+# plt.legend()
+# plt.grid()
+# plt.show()
+
+res = gp_minimize(f,                  # the function to minimize
+                  [(-XLIM, XLIM)],      # the bounds on each dimension of x
+                  acq_func="EI",      # the acquisition function
+                  n_calls=15,         # the number of evaluations of f 
+                  n_random_starts=5,  # the number of random initialization points
+                  noise=0.1**2,       # the noise level (optional)
+                  random_state=123)   # the random seed
 
 
-# def f(p):
-#     """The function to predict."""
-#     x,y = p
-#     return x+y
 
-x = np.arange(-8,8,.1)
-y = np.arange(-8,8,.1)
-x_grid, y_grid = np.meshgrid(x,y)
-# x_grid = np.array([(x,y) for x in np.arange(-8,8,.1) for y in
-# np.arange(-8,8,.1)])
-z_grid = f_helper(x_grid, y_grid)
-# y_grid = np.apply_along_axis(f,1,x_grid)
-# yfoo_grid = np.apply_along_axis(foo,1,x_grid)
-# X = np.array([(0,3),(2,7),(3,3)])
-# y = np.apply_along_axis(f,1,X)
+plt.rcParams["figure.figsize"] = (8, 8)
 
-# # Instantiate a Gaussian Process model
-# kernel = C(1.0, (1e-3, 1e3)) * RBF(10, (1e-2, 1e2))
-# gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=9)
+x = np.linspace(-XLIM, XLIM, 400).reshape(-1, 1)
+x_gp = res.space.transform(x.tolist())
+fx = np.array([f(x_i, noise_level=0.0) for x_i in x])
 
-# # Fit to data using Maximum Likelihood Estimation of the parameters
-# gp.fit(X, y)
+# Plot the 5 iterations following the 5 random points
+for n_iter in range(5):
+    gp = res.models[n_iter]
+    curr_x_iters = res.x_iters[:5+n_iter]
+    curr_func_vals = res.func_vals[:5+n_iter]
 
-# # Make the prediction on the meshed x-axis (ask for MSE as well)
-# y_pred, sigma = gp.predict(x_grid, return_std=True)
+    # Plot true function.
+    plt.subplot(5, 2, 2*n_iter+1)
+    plt.plot(x, fx, "r--", label="True (unknown)")
+    plt.fill(np.concatenate([x, x[::-1]]),
+             np.concatenate([fx - 1.9600 * noise_level, 
+                             fx[::-1] + 1.9600 * noise_level]),
+             alpha=.2, fc="r", ec="None")
 
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-surf = ax.plot_surface(x_grid, y_grid, z_grid,
-                       #cmap=cm.coolwarm,
-                       linewidth=0, antialiased=False)
+    # Plot GP(x) + contours
+    y_pred, sigma = gp.predict(x_gp, return_std=True)
+    plt.plot(x, y_pred, "g--", label=r"$\mu_{GP}(x)$")
+    plt.fill(np.concatenate([x, x[::-1]]),
+             np.concatenate([y_pred - 1.9600 * sigma, 
+                             (y_pred + 1.9600 * sigma)[::-1]]),
+             alpha=.2, fc="g", ec="None")
 
-ax = fig.add_subplot(311, projection='3d')
-ax.scatter(x_grid[:,0],x_grid[:,1],y_grid)
-# ax1 = fig.add_subplot(312, projection='3d')
-# ax1.scatter(x_grid[:,0],x_grid[:,1],yfoo_grid)
-# ax2 = fig.add_subplot(313, projection='3d')
-# ax2.scatter(x_grid[:,0],x_grid[:,1],y_pred)
+    # Plot sampled points
+    plt.plot(curr_x_iters, curr_func_vals,
+             "r.", markersize=8, label="First 5 Random Observations")
+    plt.plot(curr_x_iters[5:], curr_func_vals[5:],
+             "b.", markersize=8, label="Queries")
+
+    # Adjust plot layout
+    plt.grid()
+
+    if n_iter == 0:
+        plt.legend(loc="best", prop={'size': 6}, numpoints=1)
+
+    if n_iter != 4:
+        plt.tick_params(axis='x', which='both', bottom='off', 
+                        top='off', labelbottom='off') 
+
+    # Plot EI(x)
+    plt.subplot(5, 2, 2*n_iter+2)
+    acq = gaussian_ei(x_gp, gp, y_opt=np.min(curr_func_vals))
+    plt.plot(x, acq, "b", label="EI(x)")
+    plt.fill_between(x.ravel(), -2.0, acq.ravel(), alpha=0.3, color='blue')
+
+    next_x = res.x_iters[5+n_iter]
+    next_acq = gaussian_ei(res.space.transform([next_x]), gp, y_opt=np.min(curr_func_vals))
+    plt.plot(next_x, next_acq, "bo", markersize=6, label="Next query point")
+
+    # Adjust plot layout
+    plt.ylim(0, 0.5)
+    plt.grid()
+
+    if n_iter == 0:
+        plt.legend(loc="best", prop={'size': 6}, numpoints=1)
+
+    if n_iter != 4:
+        plt.tick_params(axis='x', which='both', bottom='off', 
+                        top='off', labelbottom='off') 
 
 plt.show()
-
-# Plot the function, the prediction and the 95% confidence interval based on
-# the MSE
-# plt.figure()
-# plt.plot(x, f(x), 'r:', label=u'$f(x) = x\,\sin(x)$')
-# plt.plot(X, y, 'r.', markersize=10, label=u'Observations')
-# plt.plot(x, y_pred, 'b-', label=u'Prediction')
-# plt.fill(np.concatenate([x, x[::-1]]),
-#          np.concatenate([y_pred - 1.9600 * sigma,
-#                         (y_pred + 1.9600 * sigma)[::-1]]),
-#          alpha=.5, fc='b', ec='None', label='95% confidence interval')
-# plt.xlabel('$x$')
-# plt.ylabel('$f(x)$')
-# plt.ylim(-10, 20)
-# plt.legend(loc='upper left')
-
-def GP(n=100):
-    p0 = np.array((random.randint(0,3), random.randint(0,7)))
-    
-    
