@@ -15,7 +15,8 @@ noise_level = 0.1
 XLIM = 8
 
 def f(x, noise_level=noise_level):
-    return np.sin(x[0]) * (x[0]-2) + np.random.randn() * noise_level
+    #return np.sin(x[0]) * (x[0]-2) + np.random.randn() * noise_level
+    return -scipy.stats.norm.pdf(x[0]) + np.random.randn() * noise_level
 
 # Plot f(x) + contours
 # x = np.linspace(-8, 8, 400).reshape(-1, 1)

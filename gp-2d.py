@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from skopt.space import Real, Integer
 import itertools
+from scipy.stats import multivariate_normal
 
 noise_level = 0.1
 n_dims = 1
@@ -21,10 +22,23 @@ np.random.seed(1234)
 
 def f(x, noise_level=noise_level):
     return np.sin(x[0]) * (x[0]-2) + np.random.randn() * noise_level
-def g_helper(x,y,a=1,noise_level=noise_level):
+def g_helper(x,y,a=100,noise_level=noise_level):
     return g([x,y],a,noise_level)
-def g(x, a=1, noise_level=noise_level):
-    return f([x[0]]) + f([x[1]]) + a*(x[0]+x[1]) + np.random.randn() * noise_level
+@np.vectorize
+def diff(x,y,b=1):
+    #return b*x*y
+    #return b*(x+y)
+    # if np.linalg.norm([x+2,y+5]) >= 2:
+    #     return 0
+    # else:
+    #     return b*np.linalg.norm([x+2,y+5]) - b*4
+    mvn = multivariate_normal(mean=[-3,-5], cov=[[1,0],[0,1]])
+    return -b*mvn.pdf([x,y])
+
+def g(x, a=100, noise_level=noise_level):
+    return f([x[0]], noise_level=0) + f([x[1]],noise_level=0) + diff(x[0],x[1],a) + np.random.randn() * noise_level
+
+
 
 spacef = [Integer(-8, 8, name='x')]
 
@@ -97,38 +111,43 @@ xysinglemax = sorted(xysingle, key=lambda x: x[1])
 x0 = [x for x,y in xysinglemax[:2]]
 x0 = list(itertools.product(x0,x0))
 
-resg_prior = gp_minimize(g,
-                   spaceg,
-                   acq_func="EI",
-                   n_calls=50,
-                   n_random_starts=5,
-                   noise=100*noise_level**2,
-                   x0=x0)
+# resg_prior = gp_minimize(g,
+#                    spaceg,
+#                    acq_func="EI",
+#                    n_calls=20,
+#                    n_random_starts=5,
+#                    noise=100*noise_level**2,
+#                    x0=x0)
 resg = gp_minimize(g,
                    spaceg,
                    acq_func="EI",
-                   n_calls=50,
-                   n_random_starts=5,
+                   n_calls=100,
+                   n_random_starts=10,
                    noise=noise_level**2)
 
 x = np.arange(-8,8,.1)
 y = np.arange(-8,8,.1)
 x_grid, y_grid = np.meshgrid(x,y)
 z_grid_prior = g_helper(x_grid, y_grid, a=0, noise_level=0)
-z_grid = g_helper(x_grid, y_grid, noise_level=0)
+z_grid = g_helper(x_grid, y_grid, noise_level=0, a=100)
+diff_grid = diff(x_grid, y_grid, b=2)
 
 ax = plt.subplot(1,1,1,projection='3d')
 surf = ax.plot_surface(x_grid, y_grid, z_grid,
                        #cmap=cm.coolwarm,
                        linewidth=0, antialiased=False)
+# surf = ax.plot_surface(x_grid, y_grid, z_grid2,
+#                        #cmap=cm.coolwarm,
+#                        linewidth=0, antialiased=False)
+
 # Plot the observation points as scatter
-x_scat = np.array([p[0] for p in resg_prior.x_iters])
-y_scat = np.array([p[1] for p in resg_prior.x_iters])
+x_scat = np.array([p[0] for p in resg.x_iters])
+y_scat = np.array([p[1] for p in resg.x_iters])
 z_scat = g_helper(x_scat, y_scat)
 z_scat_prior = g_helper(x_scat,y_scat,a=0)
 n_prior = len(x0)
 ax.plot(x_scat[n_prior:], y_scat[n_prior:], z_scat[n_prior:], 'r.', markersize=10, label='Observations')
-ax.plot(x_scat[:n_prior], y_scat[:n_prior], z_scat_prior[:n_prior], 'b.', markersize=10, label='Prior')
+ax.plot(x_scat[:n_prior], y_scat[:n_prior], z_scat[:n_prior], 'b.', markersize=10, label='Prior')
 
 # ax = plt.subplot(1,2,2,projection='3d')
 # surf = ax.plot_surface(x_grid, y_grid, z_grid,
