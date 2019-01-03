@@ -74,7 +74,7 @@ print(resf.x_iters)
 
 # Plot f(x) + contours
 x = np.linspace(-8, 8, 400).reshape(-1, 1)
-fx = [f(x_i, noise_level=0.0) for x_i in x]
+fx = np.array([f(x_i, noise_level=0.0) for x_i in x])
 
 surrogate_m = resf.models[-1]
 # Note: We need to transform x for the gp prediction since skopt
@@ -82,16 +82,19 @@ surrogate_m = resf.models[-1]
 x_gp = resf.space.transform(x)
 y_pred, sigma = surrogate_m.predict(x_gp, return_std=True)
 
-plt.plot(x, fx, "r:", label="f(x) = (x-3)sin(x) + eps")
-plt.plot(resf.x_iters, resf.func_vals, 'r.', markersize=10, label='Observations')
-plt.plot(x, y_pred, 'b-', label=u'Prediction')
-plt.fill(np.concatenate([x, x[::-1]]),
+x_plot = x+8
+plt.plot(x_plot, fx, "r:", label="f(x) = (x-3)sin(x) + eps")
+plt.plot(np.array(resf.x_iters)+8, np.array(resf.func_vals), 'r.', markersize=6, label='Observations')
+plt.plot(x_plot, y_pred, 'b-', label=u'Prediction')
+plt.fill(np.concatenate([x_plot, x_plot[::-1]]),
          np.concatenate([y_pred - 1.9600 * sigma,
                          (y_pred + 1.9600 * sigma)[::-1]]),
          alpha=.5, fc="b", ec="None")
 plt.legend()
 plt.grid(False)
-plt.show()
+# plt.gcf().set_figwidth(1.5)
+# plt.gcf().set_figheight(1.5)
+# plt.savefig('/Users/samlaf/Dropbox/BCI_Bayes_Lajoie_Laf/SamLaf_COSYNE_Abstract/COSYNE19_figure_bones/1d-gp_tiny_nolegend.pdf', format='pdf', transparent=True)
 
 
 ##### -------------------------------------------------- #####
@@ -193,40 +196,51 @@ plt.show()
 
 
 #PLOTS FOR PAPER
-# plt.plot(range(10,100), priorconv, 'b.-', label='Using Prior')
-# plt.plot(nopconv, 'r.-', label='No Prior')
+# plt.plot(range(10,100), priorconv, 'b.-', label='Using Prior', markersize=3)
+# plt.plot(nopconv, 'r.-', label='No Prior', markersize=3)
 # plt.title('Convergence Rates')
 # plt.xlabel('Iterations')
 # plt.ylabel('Min Value')
-# plt.legend()
+# #plt.legend()
+# plt.gcf().set_figwidth(1.5)
+# plt.gcf().set_figheight(1.5)
+# plt.savefig('/Users/samlaf/Dropbox/BCI_Bayes_Lajoie_Laf/SamLaf_COSYNE_Abstract/COSYNE19_figure_bones/conv-rate_tiny_nolegend.pdf', format='pdf', transparent=True)
 
-# plt.plot(sorted(resf.func_vals, reverse=True), 'b.-')
-# plt.title('Convergence Rates 1D')
+# plt.plot(sorted(resf.func_vals, reverse=True), 'b.-', markersize=3)
+# plt.title('Convergence Rate 1D')
 # plt.xlabel('Iterations')
 # plt.ylabel('Min Value')
+# plt.gcf().set_figwidth(1.5)
+# plt.gcf().set_figheight(1.5)
+# plt.savefig('/Users/samlaf/Dropbox/BCI_Bayes_Lajoie_Laf/SamLaf_COSYNE_Abstract/COSYNE19_figure_bones/conv-rate-1d_tiny.pdf', format='pdf', transparent=True)
 
-# We shift the grids to have the axes labeled from 0 to 16 instead of
-# -8 to 8
+# #We shift the grids to have the axes labeled from 0 to 16 instead of
+# #-8 to 8
 # x_grid += 8
 # y_grid += 8
 
-# ax = plt.subplot(1,1,1,projection='3d')
+# plt.rcParams.update({'font.size': 5})
+# fig = plt.figure()
+# fig.set_figwidth(1.5)
+# fig.set_figheight(1.5)
+
+# ax = fig.add_subplot(1,1,1,projection='3d')
 # ax.plot_surface(x_grid, y_grid, z_grid,
 #                 color=(.8,0,0),
 #                 linewidth=0, antialiased=False)
 # ax.set_zlim([-20,20])
-# plt.savefig('real.pdf', format='pdf')
+# plt.savefig('/Users/samlaf/Dropbox/BCI_Bayes_Lajoie_Laf/SamLaf_COSYNE_Abstract/COSYNE19_figure_bones/real_tiny.pdf', format='pdf', transparent=True)
 
 # ax = plt.subplot(1,1,1,projection='3d')
 # ax.plot_surface(x_grid, y_grid, z_grid_prior,
 #                 #cmap=cm.coolwarm,
 #                 linewidth=0, antialiased=False)
 # ax.set_zlim([-20,20])
-# plt.savefig('prior.pdf', format='pdf')
+# plt.savefig('/Users/samlaf/Dropbox/BCI_Bayes_Lajoie_Laf/SamLaf_COSYNE_Abstract/COSYNE19_figure_bones/prior_tiny.pdf', format='pdf', transparent=True)
 
 # ax = plt.subplot(1,1,1,projection='3d')
 # ax.plot_surface(x_grid, y_grid, xy_diff,
 #                 color='g',
 #                 linewidth=0, antialiased=False)
 # ax.set_zlim([-20,20])
-# plt.savefig('diff.pdf', format='pdf')
+# plt.savefig('/Users/samlaf/Dropbox/BCI_Bayes_Lajoie_Laf/SamLaf_COSYNE_Abstract/COSYNE19_figure_bones/diff.pdf', format='pdf', transparent=True)
