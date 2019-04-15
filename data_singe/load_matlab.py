@@ -53,49 +53,15 @@ for ch1 in [1,6,25]:
     for ch2 in [1,6,25]:
         if ch1 == ch2:
             ch = dct[ch1][ch2]['data']
-            meanmax = ch.max(axis=1).mean()
-            dct[ch1][ch2]['meanmax'] = meanmax
+            maxs = ch.max(axis=1)
+            dct[ch1][ch2]['meanmax'] = maxs.mean()
+            dct[ch1][ch2]['stdmax'] = maxs.std()
         elif ch1 != ch2:
             for dt in [0,10,20,40]:
                 ch = dct[ch1][ch2][dt]['data']
-                meanmax = ch.max(axis=1).mean()
-                dct[ch1][ch2][dt]['meanmax'] = meanmax
-
-
-def analyze1d(data):
-    # Let's use emg 0 and build a "prior" datastructure (single pulses)
-    EMG = 0
-
-    ch1 = data[1][1]
-    ch6 = data[6][6]
-    ch25 = data[25][25]
-
-    meanmaxs_single = []
-    for ch in [ch1,ch6,ch25]:
-        mm = ch.max(axis=1).mean()
-        meanmaxs_single.append(mm)
-
-    plt.figure()
-    plt.plot(meanmaxs_single)
-
-
-
-    #Let's print the different curves and the mean
-    plt.figure()
-    for i,ts in enumerate(ch1, 1):
-        plt.subplot(4,5,i)
-        plt.gca().axes.get_xaxis().set_visible(False)
-        plt.gca().axes.get_yaxis().set_visible(False)
-        plt.plot(ts)
-
-    plt.figure()
-    ch1avg = ch1.mean(axis=0)
-    plt.plot(ch1avg)
-
-# analyze1d(dct)
-# analyze1d(rawdata)
-# plt.show()
-
+                maxs = ch.max(axis=1)
+                dct[ch1][ch2][dt]['meanmax'] = maxs.mean()
+                dct[ch1][ch2][dt]['stdmax'] = maxs.std()
 
 
 # Tester resultat en 2d et essayer de trouver un prior qui va bien fit
@@ -111,37 +77,68 @@ def build_f_grid(dt=40, f='meanmax'):
                 z_grid[i][j] = dct[ch1][ch2][dt][f]
     return z_grid
 
-# Let's look at 40ms time delay
-def plot_2d(dt,f='meanmax'):
+# Plot the response graph for a given delta_t (0,10,20,40)
+def plot_2d(dt=40,f='meanmax', usestd=True, ax=None, title=None):
+    """ f can be either a str (which will be used to call build_f_grid)
+or a grid already built, for eg. grid of diff between response and prior"""
     x = [0,1,2]
     y = [0,1,2]
     x_grid, y_grid = np.meshgrid(x,y)
-    z_grid = build_f_grid(dt,f)
-    
-    ax = plt.subplot(1,1,1,projection='3d')
+    if type(f) == str:
+        z_grid = build_f_grid(dt,f)
+    else:
+        z_grid = f
+
+    if ax is None:
+        ax = plt.subplot(1,1,1,projection='3d')
+    ax.get_xaxis().set_ticks([0,1,2])
+    ax.get_yaxis().set_ticks([0,1,2])
+    if title is None:
+        ax.set_title('delta_t = {}'.format(dt))
+    else:
+        ax.set_title(title)
     surf = ax.plot_surface(x_grid, y_grid, z_grid,
                        #cmap=cm.coolwarm,
                        linewidth=0, antialiased=False)
+    if usestd:
+        std_grid = build_f_grid(dt,f='stdmax')
+        # We plot 1 std deviation above and below the mean
+        std_min = z_grid - std_grid
+        std_max = z_grid + std_grid
+        ax.scatter(x_grid, y_grid, std_min, c='red')
+        ax.scatter(x_grid, y_grid, std_max, c='red')
+        # We plotted the scatter for aesthetic reasons,
+        # now we plot 2d lines to show the std_dev more clearly
+        for x,y,smin,smax in zip(x_grid.flatten(), y_grid.flatten(),
+                                 std_min.flatten(), std_max.flatten()):
+            xs = np.ones(100) * x
+            ys = np.ones(100) * y
+            zs = np.linspace(smin,smax,100)
+            ax.plot(xs, ys, zs, c='red')
 
-def plot_all_2d(f='meanmax'):
-    x = [0,1,2]
-    y = [0,1,2]
-    x_grid, y_grid = np.meshgrid(x,y)
     
+def plot_all_2d(f='meanmax'):
+    plt.figure()
     for i,dt in enumerate([0,10,20,40],1):
-        z_grid = build_f_grid(dt,f)
-        ax = plt.subplot(4,1,i,projection='3d')
-        surf = ax.plot_surface(x_grid, y_grid, z_grid,
-                       #cmap=cm.coolwarm,
-                       linewidth=0, antialiased=False)
-        ax.set_title('delta_t = {}'.format(dt))
-        ax.axes.get_xaxis().set_ticks([])
-        ax.get_yaxis().set_ticks([])
+        ax = plt.subplot(2,2,i,projection='3d')
+        plot_2d(dt,f,ax=ax)
 
-plot_all_2d('meanmax')
+#plot_2d(0)
+#plot_all_2d('meanmax')
+
+resp2d = build_f_grid()
+prior1d = resp2d.diagonal().reshape((3,1))
+prior2d_add = (prior1d + prior1d.T) * 1/2
+prior2d_mult = (prior1d * prior1d.T)
+diff_add = resp2d - prior2d_add
+diff_mult = resp2d - prior2d_mult
+plt.figure()
+for i,(z_grid,title) in enumerate([(prior2d_add, "prior2d_add"),
+                                   (diff_add, "diff_add"),
+                                   (prior2d_mult, "prior2d_mult"),
+                                   (diff_mult, "diff_mult")],
+                                  1):
+    ax = plt.subplot(2,2,i,projection='3d')
+    plot_2d(f=z_grid, usestd=False, title=title, ax=ax)
+
 plt.show()
-
-
-
-
-

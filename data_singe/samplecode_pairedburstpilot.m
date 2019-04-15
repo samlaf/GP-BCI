@@ -31,6 +31,7 @@ end
 
 % From marco's email
 sampling_freq = 4882.8;
+
 [B,A] = butter(5,[40 500]/(0.5*sampling_freq),'bandpass');
 [B60,A60] = butter(2,[59.9 60.1]/(0.5*sampling_freq),'stop');
 

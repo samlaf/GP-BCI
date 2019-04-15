@@ -22,4 +22,4 @@ for block = 1:NumOfBlock
     EmgResponse{block}=EmgAnalysisBasic(DataBlock);
 end
 
-save('EmgResponse.mat', 'EmgResponse');
+%save('EmgResponse.mat', 'EmgResponse');
