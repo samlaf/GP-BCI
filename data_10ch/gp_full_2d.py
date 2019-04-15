@@ -12,6 +12,7 @@ import os, os.path as path
 import h5py
 import itertools
 import argparse
+import copy
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--uid', type=int, default=0, help='uid for job number')
@@ -129,7 +130,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, dt=dt):
+def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=False, dt=dt):
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -155,8 +156,9 @@ def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, 
         resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
         Y.append(resp)
         m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD)
-        # We only optimize hyperparameters with random points now
-        #m.optimize_restarts(num_restarts=num_restarts)
+        # If continue optimize, we optimize params after every query
+        if continue_opt:
+            m.optimize_restarts(num_restarts=num_restarts)
         models.append(m)
     return models
 
@@ -180,11 +182,12 @@ def plot_model_2d(m, fulldatam=None, title=""):
     fig.suptitle(title)
     for i in [0,1]:
         for j in range(5):
+            ch1 = xy2ch[i][j]
+            title='ch1 = {}'.format(ch1)
+            axes[2*i][j].set_title(title)
             for x2i in [0,1]:
                 ax = axes[2*i+x2i][j]
-                ch1 = xy2ch[i][j]
-                m.plot(ax=ax, fixed_inputs=[(0,i),(1,j),(2,x2i)], plot_data=False, legend=False,
-                       title='ch1 = {}'.format(ch1))
+                m.plot(ax=ax, fixed_inputs=[(0,i),(1,j),(2,x2i)], plot_data=False, legend=False)
                 
                 # We also plot the max found
                 maxx = m.predict(make_dataset_2d(trains,means=True)[0])[0].max()
@@ -209,8 +212,7 @@ def linfdist(m1, m2):
     pred2 = m2.predict(X)[0]
     return abs(pred1.max() - pred2.max())
 
-if __name__ == "__main__":
-    args = parser.parse_args()
+def run_dist_exps(args):
     emgdtpath = path.join('exps', 'emg{}'.format(args.emg), 'dt{}'.format(args.dt))
     exppath = path.join(emgdtpath, 'exp{}'.format(args.uid))
     if not path.isdir(exppath):
@@ -289,3 +291,31 @@ if __name__ == "__main__":
             plt.savefig(os.path.join(exppath, "2d_linf{}_{}.png".format(name,k)))
             plt.close()
 
+
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    dt = args.dt
+    #trainsC = Trains(emg=args.emg)
+    #trains = trainsC.trains
+
+    X1d,Y1d = make_dataset_1d(trains)
+    m1d, = train_models_1d(X1d,Y1d, ARD=False)
+
+    # We test changing the max,
+    # and changing the dataset
+    new_trains = copy.deepcopy(trains)
+    for ch in [6,13,21,17]:
+        new_trains[17][ch][dt]['data'] /= 2
+        new_trains[17][17][dt]['meanmax'] = new_trains[17][ch][dt]['data'].max(axis=1).mean()
+        new_trains[ch][17][dt]['data'] /= 2
+        new_trains[ch][17][dt]['meanmax'] = new_trains[ch][17][dt]['data'].max(axis=1).mean()
+
+    Xmean,Ymean = make_dataset_2d(new_trains, dt=args.dt, means=True)
+    madd, = train_models_2d(Xmean,Ymean, ARD=ARD)
+    plot_model_2d(madd)
+
+    modelsprior = train_model_seq_2d(new_trains,n_random_pts=25, n_total_pts=50, prior1d=m1d, continue_opt=True, fix=True)
+    m = modelsprior[-1]
+    plot_model_2d(m)
+    plt.show()

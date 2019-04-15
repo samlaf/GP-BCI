@@ -7,9 +7,4 @@
 
 source /network/home/laferris/.bashrc
 conda activate gp
-if [-z "$EMG"]; then
-    echo "\$EMG is empty"
-fi
-echo $EMG
-echo "nonono"
-python gp_full_2d.py --uid $UID --dt $DT --emg $EMG
+python dist_metrics.py --uid $UID --dt $DT --emg $EMG
