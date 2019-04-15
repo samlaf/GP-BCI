@@ -8,11 +8,17 @@ import numpy as np
 import GPy
 import matplotlib.pyplot as plt
 import pickle
-import os
+import os, os.path as path
 import h5py
 import itertools
+import argparse
 
-emg=2
+parser = argparse.ArgumentParser()
+parser.add_argument('--uid', type=int, default=0, help='uid for job number')
+parser.add_argument('--dt', type=int, default=0, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')
+parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
+
+# DEFAULT
 dt=0
 
 def make_dataset_2d(trains, means=False, dt=dt, n=None):
@@ -123,7 +129,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False):
+def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, dt=dt):
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -204,28 +210,40 @@ def linfdist(m1, m2):
     return abs(pred1.max() - pred2.max())
 
 if __name__ == "__main__":
-    trainsC = Trains(emg=2)
+    args = parser.parse_args()
+    emgdtpath = path.join('exps', 'emg{}'.format(args.emg), 'dt{}'.format(args.dt))
+    exppath = path.join(emgdtpath, 'exp{}'.format(args.uid))
+    if not path.isdir(exppath):
+        os.makedirs(exppath)
+
+    trainsC = Trains(emg=args.emg)
     trains = trainsC.trains
 
     X1d,Y1d = make_dataset_1d(trains)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
 
-    X,Y = make_dataset_2d(trains)
-    if os.path.exists("data/maddprior.h5"):
-        with h5py.File('data/maddprior.h5') as f:
+    X,Y = make_dataset_2d(trains, dt=args.dt)
+    
+    # Note that the full-data models can be shared for all exps (with
+    # same emg and dt).
+    # Hence we save them in emgdtpath instead of exppath
+    addpriorpath = path.join(emgdtpath, 'maddprior.h5')
+    if os.path.exists(addpriorpath):
+        with h5py.File(addpriorpath) as f:
             maddprior, = train_models_2d(X,Y, prior1d=m1d, optimize=False)
             maddprior[:] = f['param_array']
     else:
         maddprior, = train_models_2d(X,Y, prior1d=m1d)
-        maddprior.save('data/maddprior.h5')
+        maddprior.save(addpriorpath)
 
-    if os.path.exists("data/madd.h5"):
-        with h5py.File('data/madd.h5') as f:
+    addpath = path.join(emgdtpath, 'madd.h5')
+    if path.exists(addpath):
+        with h5py.File(addpath) as f:
             madd, = train_models_2d(X,Y, optimize=False)
             madd[:] = f['param_array']
     else:
         madd, = train_models_2d(X,Y)
-        madd.save('data/madd.h5')
+        madd.save(addpath)
     
     # We train all models with n rnd start pts and m sequential pts
     # And compare them to the model trained with all datapts
@@ -240,33 +258,34 @@ if __name__ == "__main__":
         for i,n1 in enumerate(nrnd):
             for j,n2 in enumerate(nseq):
                 print(n1,n2)
-                models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2)
-                modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d)
-                modelspriorfix = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, fix=True)
+                models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, dt=args.dt)
+                modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, dt=args.dt)
+                modelspriorfix = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, fix=True, dt=args.dt)
                 mnoprior, mprior, mpriorfix = models[-1], modelsprior[-1], modelspriorfix[-1]
                 for midx,m in enumerate([mnoprior, mprior, mpriorfix]):
                     l2 = l2dist(m, madd)
                     linf = linfdist(m, madd)
                     l2s[midx][k][i][j] = l2
                     linfs[midx][k][i][j] = linf
-    np.save("data/l2s", l2s)
-    np.save("data/linfs", linfs)
+        np.save(os.path.join(exppath,"l2s"), l2s)
+        np.save(os.path.join(exppath, "linfs"), linfs)
 
-    for i,name in enumerate(["","_prior","_priorfix"]):
-        plt.figure()
-        plt.imshow(l2s[i].mean(axis=0), extent=[0,100,200,10])
-        plt.title("2d l2 dist to full model{}".format(name))
-        plt.ylabel("N random pts")
-        plt.xlabel("N sequential")
-        plt.colorbar()
-        plt.savefig("images/2d_l2{}.png".format(name))
+        for i,name in enumerate(["","_prior","_priorfix"]):
+            plt.figure()
+            plt.imshow(l2s[i][:k+1].mean(axis=0), extent=[0,100,100,10])
+            plt.title("2d l2 dist to full model{}".format(name))
+            plt.ylabel("N random pts")
+            plt.xlabel("N sequential")
+            plt.colorbar()
+            plt.savefig(os.path.join(exppath, "2d_l2{}_{}.png".format(name,k)))
+            plt.close()
 
-        plt.figure()
-        plt.imshow(linfs[i].mean(axis=0), extent=[0,50,100,10])
-        plt.title("2d linf dist to full model{}".format(name))
-        plt.ylabel("N random pts")
-        plt.xlabel("N sequential")
-        plt.colorbar()
-        plt.savefig("images/2d_linf{}.png".format(name))
-
+            plt.figure()
+            plt.imshow(linfs[i][:k+1].mean(axis=0), extent=[0,100,100,10])
+            plt.title("2d linf dist to full model{}".format(name))
+            plt.ylabel("N random pts")
+            plt.xlabel("N sequential")
+            plt.colorbar()
+            plt.savefig(os.path.join(exppath, "2d_linf{}_{}.png".format(name,k)))
+            plt.close()
 

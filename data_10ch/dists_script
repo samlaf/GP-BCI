@@ -1,0 +1,15 @@
+#!/bin/bash
+#SBATCH -o /network/tmp1/laferris/slurm-%j.out
+
+## this script is called as
+## sbatch --export=UID=<uid>,DT=<dt>,EMG=<emg> dists_script
+## where uid is an identifier for the job number
+
+source /network/home/laferris/.bashrc
+conda activate gp
+if [-z "$EMG"]; then
+    echo "\$EMG is empty"
+fi
+echo $EMG
+echo "nonono"
+python gp_full_2d.py --uid $UID --dt $DT --emg $EMG
