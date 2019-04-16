@@ -194,7 +194,7 @@ def run_dists_exps(args):
     plt.ylabel("N random pts")
     plt.xlabel("N sequential")
     plt.colorbar()
-    plt.savefig(os.path.join(exppath, "2d_l2{}_{}.png".format(name,k)))
+    plt.savefig(os.path.join(exppath, "1d_l2.png"))
     plt.close()
 
     plt.figure()
@@ -203,7 +203,7 @@ def run_dists_exps(args):
     plt.ylabel("N random pts")
     plt.xlabel("N sequential")
     plt.colorbar()
-    plt.savefig(os.path.join(exppath, "2d_l2{}_{}.png".format(name,k)))
+    plt.savefig(os.path.join(exppath, "1d_linf.png"))
     plt.close()
 
 if __name__ == '__main__':
