@@ -10,8 +10,17 @@ import numpy as np
 import GPy
 import matplotlib.pyplot as plt
 from numpy import linalg as LA
+import argparse
+import os
+from os import path
+import itertools
 
-emg=2
+parser = argparse.ArgumentParser()
+parser.add_argument('--uid', type=int, default=0, help='uid for job number')
+parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
+
+# DEFAULT
+# there is no dt in 1d. But we need this to access the trains dct
 dt=0
 
 def make_dataset_1d(trains, mean=False, n=20):
@@ -109,7 +118,7 @@ def get_next_x(m, k=1):
     xy = ch2xy[maxch]
     return xy
     
-def plot_model_1d(m, plot_f=False, title=None, plot_acq=False):
+def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
     print(m)
     print(m.kern)
     print(m.kern.lengthscale)
@@ -121,14 +130,14 @@ def plot_model_1d(m, plot_f=False, title=None, plot_acq=False):
     fig.suptitle(("{}: ls="+" {:.2} "*len(lengthscales)).format(title,*lengthscales))
     for i,ax in zip([0,1],axes):
         m.plot(ax=ax, fixed_inputs=[(0,i)],
-               plot_data=False, plot_raw=plot_f,
-               title='Channels {}'.format(xy2ch[i]),
+               plot_data=False, title='Channels {}'.format(xy2ch[i]),
                lower=17, upper=83)
         # Plot data (m.plot plots all of the data in every slice, which is
         # wrong)
-    for (i,j),y in zip(m.X, m.Y):
-        i,j = int(i), int(j)
-        axes[i].plot(j, y, 'x', color='C{}'.format(j))
+    if plot_data:
+        for (i,j),y in zip(m.X, m.Y):
+            i,j = int(i), int(j)
+            axes[i].plot(j, y, 'x', color='C{}'.format(j))
     if plot_acq:
         acqmap = get_acq_map(m)
         axes[1].plot(acqmap[:5])
@@ -139,18 +148,66 @@ def plot_model_1d(m, plot_f=False, title=None, plot_acq=False):
         #     ax.errorbar(j, trains[ch][ch][dt]['meanmax'], yerr=2*trains[ch][ch][dt]['stdmax'],ecolor='r')
 
 def l2dist(m1, m2):
-    X,_ = make_dataset_1d(trains, n=1)
+    X = np.array(list(itertools.product(range(2), range(5))))
     pred1 = m1.predict(X)[0]
     pred2 = m2.predict(X)[0]
     return LA.norm(pred1-pred2)
 def linfdist(m1, m2):
-    X,_ = make_dataset_1d(trains, n=1)
+    X = np.array(list(itertools.product(range(2), range(5))))
     pred1 = m1.predict(X)[0]
     pred2 = m2.predict(X)[0]
     return abs((pred1.max() - pred2.max())/pred2.max())
 
+def run_dists_exps(args):
+    exppath = path.join('exps', '1d', 'emg{}'.format(args.emg), 'exp{}'.format(args.uid))
+    if not path.isdir(exppath):
+        os.makedirs(exppath)
+    trainsC = Trains(emg=args.emg)
+    trains = trainsC.trains
+
+    # We train all models with n rnd start pts and m sequential pts
+    # And compare them to the model trained with all datapts
+    # Then compute statistics and plot them
+    X,Y = make_dataset_1d(trains)
+    mfull, = train_models_1d(X,Y, ARD=False)
+    nrnd = range(5,50,5)
+    nseq = range(0,50,5)
+    N = 50
+    l2s = np.zeros((N, len(nrnd),len(nseq)))
+    linfs = np.zeros((N, len(nrnd),len(nseq)))
+    for k in range(N):
+        print("Starting loop", k)
+        for i,n1 in enumerate(nrnd):
+            for j,n2 in enumerate(nseq):
+                print(n1,n2)
+                models = train_model_seq(trains,n_random_pts=n1, n_total_pts=n1+n2, ARD=False)
+                m = models[-1]
+                l2 = l2dist(m, mfull)
+                linf = linfdist(m, mfull)
+                l2s[k][i][j] = l2
+                linfs[k][i][j] = linf
+        np.save(os.path.join(exppath,"l2s"), l2s)
+        np.save(os.path.join(exppath, "linfs"), linfs)
+
+    plt.imshow(l2s.mean(axis=0), extent=[0,50,50,5])
+    plt.title("1d l2 dist to true gp mean")
+    plt.ylabel("N random pts")
+    plt.xlabel("N sequential")
+    plt.colorbar()
+    plt.savefig(os.path.join(exppath, "2d_l2{}_{}.png".format(name,k)))
+    plt.close()
+
+    plt.figure()
+    plt.imshow(linfs.mean(axis=0), extent=[0,50,50,5])
+    plt.title("1d linf dist to true gp mean")
+    plt.ylabel("N random pts")
+    plt.xlabel("N sequential")
+    plt.colorbar()
+    plt.savefig(os.path.join(exppath, "2d_l2{}_{}.png".format(name,k)))
+    plt.close()
+
 if __name__ == '__main__':
-    # trainsC = Trains(emg=emg)
+    # trainsC = Trains(emg=args.emg)
     # trains = trainsC.trains
     # X,Y = make_dataset_1d(trains)
     # m1, = train_models_1d(X,Y)
@@ -159,42 +216,10 @@ if __name__ == '__main__':
     # plot_model_1d(m2, title="homoskedastic")
     # plt.show()
 
-
     # test seq model
     # models = train_model_seq(trains, n_random_pts=10, n_total_pts=20, ARD=False)
     # plot_model_1d(models[-1], plot_acq=True)
     # plt.show()
 
-    # We train all models with n rnd start pts and m sequential pts
-    # And compare them to the model trained with all datapts
-    # Then compute statistics and plot them
-    X,Y = make_dataset_1d(trains)
-    mfull, = train_models_1d(X,Y, ARD=False)
-    nrnd = range(5,30,5)
-    nseq = range(0,30,5)
-    N = 75
-    l2s = np.zeros((len(nrnd),len(nseq),N))
-    linfs = np.zeros((len(nrnd),len(nseq),N))
-    for k in range(N):
-        for i,n1 in enumerate(nrnd):
-            for j,n2 in enumerate(nseq):
-                models = train_model_seq(trains,n_random_pts=n1, n_total_pts=n1+n2, ARD=False)
-                m = models[-1]
-                l2 = l2dist(m, mfull)
-                linf = linfdist(m, mfull)
-                l2s[i][j][k] = l2
-                linfs[i][j][k] = linf
-
-    plt.imshow(l2s.mean(axis=2), extent=[0,30,30,5])
-    plt.title("1d l2 dist to true gp mean")
-    plt.ylabel("N random pts")
-    plt.xlabel("N sequential")
-    plt.colorbar()
-
-    plt.figure()
-    plt.imshow(linfs.mean(axis=2), extent=[0,30,30,5])
-    plt.title("1d linf dist to true gp mean")
-    plt.ylabel("N random pts")
-    plt.xlabel("N sequential")
-    plt.colorbar()
-    plt.show()
+    args = parser.parse_args()
+    run_dists_exps(args)

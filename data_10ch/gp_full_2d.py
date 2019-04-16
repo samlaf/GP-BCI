@@ -296,8 +296,8 @@ def run_dist_exps(args):
 if __name__ == "__main__":
     args = parser.parse_args()
     dt = args.dt
-    #trainsC = Trains(emg=args.emg)
-    #trains = trainsC.trains
+    trainsC = Trains(emg=args.emg)
+    trains = trainsC.trains
 
     X1d,Y1d = make_dataset_1d(trains)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
@@ -312,10 +312,10 @@ if __name__ == "__main__":
         new_trains[ch][17][dt]['meanmax'] = new_trains[ch][17][dt]['data'].max(axis=1).mean()
 
     Xmean,Ymean = make_dataset_2d(new_trains, dt=args.dt, means=True)
-    madd, = train_models_2d(Xmean,Ymean, ARD=ARD)
+    madd, = train_models_2d(Xmean,Ymean, ARD=False)
     plot_model_2d(madd)
 
-    modelsprior = train_model_seq_2d(new_trains,n_random_pts=25, n_total_pts=50, prior1d=m1d, continue_opt=True, fix=True)
+    modelsprior = train_model_seq_2d(new_trains,n_random_pts=50, n_total_pts=100, prior1d=m1d, continue_opt=True, fix=True)
     m = modelsprior[-1]
     plot_model_2d(m)
     plt.show()

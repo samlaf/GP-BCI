@@ -41,7 +41,7 @@ N_EMGS = 7
 
 class Trains:
 
-    def __init__(self, emg = EMG, N_EMGS = N_EMGS):
+    def __init__(self, emg = EMG, N_EMGS = N_EMGS, path_to_data=None):
         self.chs = CHS
         self.n_ch = len(self.chs)
         self.dts = DTS
@@ -58,7 +58,10 @@ class Trains:
         # 8:  seulement channel B
         # each cell contains a 20x733 matrix (20 stimulations, 733 time series
         # emg response)
-        filtmat = loadmat('FilteredPairedTrains.mat')
+        if path_to_data:
+            filtmat = loadmat(path_to_data)
+        else:
+            filtmat = loadmat('FilteredPairedTrains.mat')
         filtdata = filtmat['gfilt_resp']
 
         # Let's build a proper datastructure
@@ -153,7 +156,7 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
                 xs = np.ones(100) * x
                 ys = np.ones(100) * y
                 zs = np.linspace(smin,smax,100)
-                ax.plot(xs, ys, zs, c='red')
+                ax.plot(xs, ys, zs, c='red', alpha=0.3)
 
     
     def plot_all_2d(self, f='meanmax', zmax=None, usestd=True):

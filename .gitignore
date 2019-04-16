@@ -1,6 +1,5 @@
 FRQNT_ICMS_Aigu
 data_10ch/exps
-*.mat
 *~
 *.pyc
 .DS_Store
