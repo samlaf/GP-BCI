@@ -158,7 +158,7 @@ def linfdist(m1, m2):
     pred2 = m2.predict(X)[0]
     return abs((pred1.max() - pred2.max())/pred2.max())
 
-def run_dists_exps(args):
+def run_dist_exps(args):
     exppath = path.join('exps', '1d', 'emg{}'.format(args.emg), 'exp{}'.format(args.uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
@@ -222,4 +222,4 @@ if __name__ == '__main__':
     # plt.show()
 
     args = parser.parse_args()
-    run_dists_exps(args)
+    run_dist_exps(args)
