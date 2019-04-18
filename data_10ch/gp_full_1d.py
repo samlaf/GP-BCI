@@ -9,6 +9,7 @@ from load_matlab import *
 import numpy as np
 import GPy
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 from numpy import linalg as LA
 import argparse
 import os
@@ -16,7 +17,7 @@ from os import path
 import itertools
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--uid', type=int, default=0, help='uid for job number')
+parser.add_argument('--uid', type=int, default=1, help='uid for job number')
 parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
 
 # DEFAULT
@@ -75,7 +76,7 @@ def train_models_1d(X,Y, model_names=['homo'], num_restarts=5, ARD=True):
 
     return models
 
-def train_model_seq(trains, n_random_pts=10, n_total_pts=15, ARD=True):
+def train_model_seq(trains, n_random_pts=10, n_total_pts=15, ARD=True, num_restarts=3, continue_opt=False, k=2):
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -87,13 +88,13 @@ def train_model_seq(trains, n_random_pts=10, n_total_pts=15, ARD=True):
     #Make model
     models = []
     m = GPy.models.GPRegression(np.array(X),np.array(Y)[:,None],matk)
-    m.optimize()
+    m.optimize_restarts(num_restarts=num_restarts, messages=False)
     # We optimize this kernel once and then use it for all future models
     matk = m.kern
     gnoise = m.Gaussian_noise.variance
     models.append(m)
     for _ in range(n_total_pts-n_random_pts):
-        nextx = get_next_x(m)
+        nextx = get_next_x(m, k=k)
         X.append(nextx)
         ch = xy2ch[nextx[0]][nextx[1]]
         resp = random.choice(trains[ch][ch][dt]['data'].max(axis=1))
@@ -101,17 +102,90 @@ def train_model_seq(trains, n_random_pts=10, n_total_pts=15, ARD=True):
         m = GPy.models.GPRegression(np.array(X), np.array(Y)[:,None],matk.copy())
         m.Gaussian_noise.variance = gnoise.copy()
         ## TODO: also set gp's noise variance to be same as previous!
+        if continue_opt:
+            m.optimize_restarts(num_restarts=num_restarts, messages=False)
         models.append(m)
     return models
 
-def get_acq_map(m, k=1):
+def plot_seq_values(m, n_random_pts, trainsC=None, ax=None, legend=False):
+    if ax is None:
+        ax = plt.figure()
+    ax.plot(m.Y[:n_random_pts+1], c='b', label="{} random init pts".format(n_random_pts))
+    ax.plot(range(n_random_pts, len(m.Y)), m.Y[n_random_pts:,:], c='r', label="Sequential pts")
+    ax.set_title("Value of selected channel")
+    if trainsC:
+        maxch = trainsC.max_ch()
+        for i,resp in enumerate(m.Y):
+            x,y = m.X[i]
+            ch = xy2ch[int(x)][int(y)]
+            if ch == maxch:
+                ax.plot(i, resp, 'x', c='k')
+    if legend:
+        ax.legend()
+
+def plot_conseq_dists(m, n_random_pts, trainsC = None, ax=None, legend=False):
+    if ax is None:
+        ax = plt.figure()
+    dists = [LA.norm(m.X[i]-m.X[i+1]) for i in range(len(m.X)-1)]
+    ax.plot(dists[:n_random_pts+1], c='b', label="{} random init pts".format(n_random_pts))
+    ax.plot(range(n_random_pts, len(dists)), dists[n_random_pts:], c='r', label="Sequential pts")
+    ax.set_title("Distance between consecutive channels")
+    if trainsC:
+        maxch = trainsC.max_ch()
+        label="max channel ({})".format(maxch)
+        for i,dist in enumerate(dists):
+            x,y = m.X[i]
+            ch = xy2ch[int(x)][int(y)]
+            if ch == maxch:
+                ax.plot(i, dist, 'x', c='k', label=label)
+                label=None
+    if legend:
+        ax.legend()
+
+def plot_seq_stats(m, n_random_pts, trainsC=None, title=None, plot_acq=False, plot_gp=True):
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2,2,2)
+    ax2 = fig.add_subplot(2,2,4)
+    # We first plot sequential values
+    plot_seq_values(m, n_random_pts, trainsC=trainsC, ax=ax1)
+    # Then distance between consecutive x's
+    plot_conseq_dists(m, n_random_pts, trainsC=trainsC, ax=ax2, legend=True)
+    # Finally we plot the GP with the data points
+    ax3 = fig.add_subplot(2,2,1)
+    ax4 = fig.add_subplot(2,2,3,sharex=ax3, sharey=ax3)
+    axes = [ax3,ax4]
+    lengthscales = [m.Mat52.lengthscale[i] for i in range(len(m.Mat52.lengthscale))]
+    fig.suptitle(("{}: ls="+" {:.2} "*len(lengthscales)).format(title,*lengthscales))
+    for i,ax in zip([0,1],axes):
+        m.plot(ax=ax, fixed_inputs=[(0,i)],
+               plot_data=False, title='Channels {}'.format(xy2ch[i]),
+               lower=17, upper=83, legend=False)
+    # Plot data (m.plot plots all of the data in every slice, which is
+    # wrong)
+    axes[int(m.X[0][0])].plot(int(m.X[0][1]), m.Y[0][0], '+', label="{} random init pts".format(n_random_pts))
+    for (i,j),y in zip(m.X[1:n_random_pts,:], m.Y[1:n_random_pts,:]):
+        i,j = int(i), int(j)
+        axes[i].plot(j, y, '+', c='b')
+    t=1
+    norm = colors.Normalize(vmin=0, vmax=len(m.X)-n_random_pts)
+    for (i,j),y in zip(m.X[n_random_pts:,:], m.Y[n_random_pts:,:]):
+        i,j = int(i), int(j)
+        axes[i].plot(j, y, 'x', color=plt.cm.Reds(norm(t)))
+        t+=1
+    if plot_acq:
+        acqmap = get_acq_map(m)
+        axes[1].plot(acqmap[:5], c='y', label='acq fct')
+        axes[0].plot(acqmap[5:], c='y', label='acq fct')
+    axes[0].legend()
+
+def get_acq_map(m, k=2):
     # We use UCB, k is the "exploration" parameter
     mean,var = m.predict(np.array(list(ch2xy.values())))
     std = np.sqrt(var)
     acq = mean + k*std
     return acq
 
-def get_next_x(m, k=1):
+def get_next_x(m, k=2):
     acq = get_acq_map(m,k)
     maxidx = acq.argmax()
     maxch = CHS[maxidx]
@@ -131,17 +205,21 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
     for i,ax in zip([0,1],axes):
         m.plot(ax=ax, fixed_inputs=[(0,i)],
                plot_data=False, title='Channels {}'.format(xy2ch[i]),
-               lower=17, upper=83)
+               lower=17, upper=83, legend=False)
         # Plot data (m.plot plots all of the data in every slice, which is
         # wrong)
     if plot_data:
+        t=1
+        norm = colors.Normalize(vmin=-50, vmax=len(m.X))
         for (i,j),y in zip(m.X, m.Y):
             i,j = int(i), int(j)
-            axes[i].plot(j, y, 'x', color='C{}'.format(j))
+            axes[i].plot(j, y, 'x', color=plt.cm.YlGn(norm(t)))
+            t+=1
     if plot_acq:
         acqmap = get_acq_map(m)
-        axes[1].plot(acqmap[:5])
-        axes[0].plot(acqmap[5:])
+        axes[1].plot(acqmap[:5], c='y', label='acq fct')
+        axes[0].plot(acqmap[5:], c='y', label='acq fct')
+    axes[0].legend()
         # for j,ch in enumerate(xy2ch[i]):
         #     ax.plot(np.ones(20)*j,trains[ch][ch][dt]['data'].max(axis=1),'x')
         #     ax.plot(j, trains[ch][ch][dt]['meanmax'], 'r+')
@@ -206,9 +284,73 @@ def run_dist_exps(args):
     plt.savefig(os.path.join(exppath, "1d_linf.png"))
     plt.close()
 
+def get_ch(x,y):
+    x = int(x)
+    y = int(y)
+    return xy2ch[x][y]
+
+def run_lastch_stats_exps(trains, repeat=25, continue_opt=True, k=2):
+    exppath = path.join('exps', '1d', 'lastchstats', 'emg{}'.format(args.emg), 'exp{}'.format(args.uid))
+    if not path.isdir(exppath):
+        os.makedirs(exppath)
+    nrnd = range(5,36,10)
+    nseq = range(0,31,10)
+    lastchs = np.zeros((len(nrnd), len(nseq), repeat))
+    fig,axes = plt.subplots(len(nrnd),len(nseq), sharex=True)
+    for i,n1 in enumerate(nrnd):
+        for j,n2 in enumerate(nseq):
+            print(n1,n2)
+            lc = run_lastch_stats_exp(trains, n1,n1+n2, ax=axes[i][j], repeat=repeat, continue_opt=continue_opt, k=k)
+            lastchs[i][j] = lc
+            axes[i][j].set_title("nrnd={}, nseq={}".format(n1,n2))
+    dct = {
+        'lastchs': lastchs,
+        'nrnd': nrnd,
+        'nseq': nseq,
+        'true_ch': 17
+    }
+    with open(os.path.join(exppath, 'lastchs_dct.pkl'), 'wb') as f:
+        pickle.dump(dct, f)
+    fig.savefig(os.path.join(exppath, 'lastch1d_k{}'.format(k)))
+    return lastchs
+
+def run_lastch_stats_exp(trains, n_random_pts=10, n_total_pts=30, repeat=25, ax=None, continue_opt=True, k=2):
+    lastchs = []
+    for repeat in range(repeat):
+        models = train_model_seq(trains, n_random_pts=n_random_pts,
+                                 n_total_pts=n_total_pts, ARD=False, continue_opt=continue_opt,
+                                 num_restarts=1, k=k)
+        m = models[-1]
+        x,y = m.X[-1]
+        ch = get_ch(x,y)
+        lastchs.append(ch)
+    lastchs = np.array(lastchs)
+    if ax is None:
+        ax = plt.figure()
+    bins = np.arange(0,lastchs.max() + 1.5) - 0.5
+    ax.hist(lastchs, bins=bins)
+    return lastchs
+
+def run_seq_runs_exps(trainsC):
+    fig,ax = plt.subplots(1,1)
+    n_total=60
+    nrnd = range(10,n_total-10,10)
+    for i,n1 in enumerate(nrnd):
+        models = train_model_seq(trains, n_random_pts=n1, n_total_pts=n_total, ARD=False)
+        m = models[-1]
+        ax.plot(range(n1, len(m.Y)), m.Y[n1:,:], label="Sequential pts", c='C{}'.format(i))
+        if trainsC:
+            maxch = trainsC.max_ch()
+            x,y = m.X[-1]
+            ch = xy2ch[int(x)][int(y)]
+            if ch == maxch:
+                ax.plot(len(m.X)-1, m.Y[-1], 'x', c='C{}'.format(i))
+    plt.title("Runs with different number of random seed pts")
+
 if __name__ == '__main__':
-    # trainsC = Trains(emg=args.emg)
-    # trains = trainsC.trains
+    args = parser.parse_args()
+    trainsC = Trains(emg=args.emg)
+    trains = trainsC.trains
     # X,Y = make_dataset_1d(trains)
     # m1, = train_models_1d(X,Y)
     # m2, = train_models_1d(X,Y, ARD=False)
@@ -217,9 +359,14 @@ if __name__ == '__main__':
     # plt.show()
 
     # test seq model
-    # models = train_model_seq(trains, n_random_pts=10, n_total_pts=20, ARD=False)
-    # plot_model_1d(models[-1], plot_acq=True)
-    # plt.show()
+    # n_rnd = 10
+    # n_total=20
+    # models = train_model_seq(trains, n_random_pts=n_rnd, n_total_pts=n_total, ARD=False, k=1)
+    # plot_seq_stats(models[-1], n_random_pts=n_rnd, trainsC=trainsC, plot_acq=True, plot_gp=False)
 
-    args = parser.parse_args()
-    run_dist_exps(args)
+    lastchs = run_lastch_stats_exps(trains)
+
+    # run_lastch_stats_exps(k=1)
+    # run_lastch_stats_exps(k=2)
+    plt.show()
+

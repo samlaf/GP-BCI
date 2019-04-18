@@ -109,10 +109,23 @@ class Trains:
                 z_grid[i][j] = self.trains[ch1][ch2][dt][f]
         return z_grid
 
+    def build_f_grid_1d(self, f='meanmax'):
+        #only dt=0 makes sense in 1d so we don't need dt as argument
+        grid = np.zeros((2,5))
+        for ch in self.chs:
+            x,y = ch2xy[ch]
+            grid[x][y] = self.trains[ch][ch][0][f]
+        return grid
+
+    def max_ch(self):
+        grid = self.build_f_grid_1d()
+        x,y = np.unravel_index(grid.argmax(), grid.shape)
+        return xy2ch[x][y]
+
     def build_1d_prior(self, f='meanmax'):
         """ This function returns the function f evaluated at each point of the 2x5 grid.
 We call it 1d to contrast with 2d trains (2 channels simulated at the same time)"""
-        prior = np.zeros(self.n_ch)
+        prior = np.zeros_like(self.n_ch)
         for i,ch in enumerate(self.chs):
             prior[i] = self.trains[ch][ch][0][f]
         return prior
@@ -272,7 +285,8 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
                     plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
 
 if __name__ == "__main__":
-    trains = Trains(emg=EMG)
+    trainsC = Trains(emg=EMG)
+    trainsC.build_f_grid_1d()
     # print(trains.build_f_grid())
     # print(trains.build_1d_prior())
     # trains.plot_2d(dt=40, usestd=False)
@@ -280,6 +294,6 @@ if __name__ == "__main__":
     # trains.plot_2d_priors()
     # trains.plot_single_means()
     # trains.plot_single_responses()
-    for dt in DTS[0:2]:
-        trains.plot_response_matrix(dt=dt)
-    plt.show()
+    # for dt in DTS[0:2]:
+    #     trains.plot_response_matrix(dt=dt)
+    # plt.show()
