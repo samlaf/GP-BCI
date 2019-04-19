@@ -58,7 +58,7 @@ def make_dataset_2d(trains, means=False, dt=dt, n=None):
     Y = np.array(Y).reshape((-1,1))
     return X,Y
 
-class Abs(Mapping):
+class Abs(GPy.core.Mapping):
     def __init__(self, mapping):
         input_dim, output_dim = mapping.input_dim, mapping.output_dim
         assert(output_dim == 1)
