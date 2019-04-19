@@ -1,0 +1,17 @@
+#!/bin/bash
+#SBATCH -o /network/tmp1/laferris/slurm-%j.out
+
+## this script is called as
+## sbatch 1d_dists_script <emg>
+## where <emg> is optional, and defaults to 2
+
+if [ -z "$1" ]
+then
+  EMG=2
+else
+  EMG=$1
+fi
+
+source /network/home/laferris/.bashrc
+conda activate gp
+python dist_metrics_1d.py --uid $SLURM_JOBID --emg $EMG

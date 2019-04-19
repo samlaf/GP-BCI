@@ -58,22 +58,63 @@ def make_dataset_2d(trains, means=False, dt=dt, n=None):
     Y = np.array(Y).reshape((-1,1))
     return X,Y
 
-def build_prior(m1d):
-    mf_1 = GPy.core.Mapping(4,1)
-    def f1(x):
+class Abs(Mapping):
+    def __init__(self, mapping):
+        input_dim, output_dim = mapping.input_dim, mapping.output_dim
+        assert(output_dim == 1)
+        super(Abs, self).__init__(input_dim=input_dim, output_dim=output_dim)
+        self.mapping = mapping
+
+    def f(self, X):
+        return np.abs(self.mapping.f(X))
+
+    def update_gradients(self, dL_dF, X):
+        None
+
+    def gradients_X(self, dL_dF, X):
+        if X >= 0:
+            return X
+        else:
+            return -X
+
+
+def build_prior(m1d, complicated=False):
+    f1 = GPy.core.Mapping(4,1)
+    def f_1(x):
         return m1d.predict(x[:,0:2])[0]
-    mf_1.f = f1
-    mf_1.update_gradients = lambda a,b: None
-    mf_2 = GPy.core.Mapping(4,1)
-    def f2(x):
+    f1.f = f_1
+    f1.update_gradients = lambda a,b: None
+    
+    f2 = GPy.core.Mapping(4,1)
+    def f_2(x):
         return m1d.predict(x[:,2:4])[0]
-    mf_2.f = f2
-    mf_2.update_gradients = lambda a,b: None
-    mf = GPy.mappings.Additive(GPy.mappings.Compound(mf_1, GPy.mappings.Linear(1,1)),
-                               GPy.mappings.Compound(mf_2, GPy.mappings.Linear(1,1)))
+    f2.f = f_2
+    f2.update_gradients = lambda a,b: None
+
+    if not complicated:
+        # prior = a*f1 + b*f2
+        mf = GPy.mappings.Additive(GPy.mappings.Compound(f1, GPy.mappings.Linear(1,1)),
+                                   GPy.mappings.Compound(f2, GPy.mappings.Linear(1,1)))
+        mf.mapping.linmap.A = mf.mapping_1.linmap.A = 1/2
+    else:
+        # prior = c*(a*f1+b*f2) + d*|a*f1-b*f2| (where c and d could
+        # be exponentials related to dt in the future)
+        negf = GPy.mappings.Linear(1,1)
+        negf.A = -1
+        negf.fix()
+        a = GPy.mappings.Linear(1,1)
+        b = GPy.mappings.Linear(1,1)
+        # a*f1 + b*f2
+        mfadd = GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
+                                      GPy.mappings.Compound(f2, b))
+        # |a*f1 - b*f2|
+        mfsub = Abs(GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
+                                          GPy.mappings.Compound(GPy.mappings.Compound(f2, b), negf)))
+        mf = GPy.mappings.Additive(GPy.mappings.Compound(mfadd, GPy.mappings.Linear(1,1)),
+                                   GPy.mappings.Compound(mfsub, GPy.mappings.Linear(1,1)))
     return mf
 
-def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=True, ARD=False):
+def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=True, ARD=False, complicated=False):
     kernels = []
     # Additive kernel
     if 'add' in models:
@@ -97,7 +138,7 @@ def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=
     models = []
     for k in kernels:
         if prior1d:
-            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d))
+            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, complicated=complicated))
             m.sum.Mat52.lengthscale = m.sum.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
             m.sum.Mat52.variance = m.sum.Mat52_1.variance = prior1d.Mat52.variance
             m.Gaussian_noise.variance = prior1d.Gaussian_noise.variance
@@ -108,7 +149,7 @@ def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=
         models.append(m)
     return models
 
-def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False):
+def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=False):
     k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
     k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=ARD)
     k = k1 + k2
@@ -122,7 +163,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False):
         m.Gaussian_noise.variance = prevmodel.Gaussian_noise.variance
     elif prior1d:
         #We are building a model for first time, but with a 1d prior
-        m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d))
+        m = GPy.models.GPRegression(X,Y,k, mean_function=build_prior(prior1d, complicated=complicated))
         m.sum.Mat52.lengthscale = m.sum.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
         m.sum.Mat52.variance = m.sum.Mat52_1.variance = prior1d.Mat52.variance
         m.Gaussian_noise.variance = prior1d.Gaussian_noise.variance
@@ -130,7 +171,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=False, dt=dt):
+def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=False, dt=dt, complicated=False):
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -141,7 +182,7 @@ def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, 
         Y.append(resp)
     #We save every model after each query
     models = []
-    m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD)
+    m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, complicated=complicated)
     if fix:
         # fix all kernel parameters and only optimize for mean (prior) mapping
         m.sum.fix()
@@ -155,7 +196,7 @@ def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, 
         ch2 = xy2ch[nextx[2]][nextx[3]]
         resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
         Y.append(resp)
-        m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD)
+        m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, complicated=complicated)
         # If continue optimize, we optimize params after every query
         if continue_opt:
             m.optimize_restarts(num_restarts=num_restarts)
@@ -265,7 +306,7 @@ def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
     }
     with open(os.path.join(exppath, 'chruns2d_dct.pkl'), 'wb') as f:
         pickle.dump(dct, f)
-    return queriedchs
+    return queriedchs, maxchs
 
 def run_dist_exps(args):
     emgdtpath = path.join('exps', 'emg{}'.format(args.emg), 'dt{}'.format(args.dt))
@@ -367,12 +408,16 @@ def test_modif_max(trains, args):
     m = modelsprior[-1]
     plot_model_2d(m)
 
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
     dt = args.dt
     trainsC = Trains(emg=args.emg)
     trains = trainsC.trains
-
-    run_ch_stats_exps(trains, args)
+    
+    # queriedchs, maxchs = run_ch_stats_exps(trains, args)
+    X,Y = make_dataset_2d(trains, dt=40)
+    train_models_2d(X,Y, complicated=True)
 
     plt.show()

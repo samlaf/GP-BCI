@@ -1,4 +1,5 @@
 from gp_full_1d import run_dist_exps
+import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--uid', type=int, default=0, help='uid for job number')
