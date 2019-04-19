@@ -265,7 +265,7 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
+def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicated=False):
 
     exppath = path.join('exps', '2d', 'chruns', 'emg{}'.format(args.emg),
                         'dt{}'.format(args.dt), 'exp{}'.format(args.uid))
@@ -287,10 +287,11 @@ def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
         for i,n1 in enumerate(nrnd):
             print(n1, "random init pts")
             models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
-                                        num_restarts=1, continue_opt=continue_opt, dt=args.dt)
+                                        num_restarts=1, continue_opt=continue_opt,
+                                        dt=args.dt, complicated=complicated)
             modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                             prior1d=m1d, dt=args.dt)
+                                             prior1d=m1d, dt=args.dt, complicated=complicated)
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
             for r,m in enumerate(models,n1-1):
@@ -418,6 +419,6 @@ if __name__ == "__main__":
     
     # queriedchs, maxchs = run_ch_stats_exps(trains, args)
     X,Y = make_dataset_2d(trains, dt=40)
-    train_models_2d(X,Y, complicated=True)
+    m, train_models_2d(X,Y, complicated=True)
 
     plt.show()
