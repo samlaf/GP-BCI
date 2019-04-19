@@ -170,7 +170,7 @@ def get_next_x(m, k=2):
 
 def get_acq_map(m, k=2):
     # We use UCB, k is the "exploration" parameter
-    X,_ = make_dataset_2d(trains,means=True)
+    X = np.array(list(itertools.product(range(5),range(2), range(5), range(2))))
     mean,var = m.predict(X)
     std = np.sqrt(var)
     acq = mean + k*std
