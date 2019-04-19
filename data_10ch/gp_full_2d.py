@@ -234,6 +234,9 @@ def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
     n_ch=2
     n_models=2
     nrnd = range(15,76,10)
+    # Build 1d model for modelsprior
+    X1d,Y1d = make_dataset_1d(trains)
+    m1d, = train_models_1d(X1d,Y1d, ARD=False)
     # queriedchs contains <n_ch> queried channels for all <repeat> runs of <ntotal>
     # queries with <nrnd> initial random pts for each of <n_models> models
     queriedchs = np.zeros((n_models, repeat, len(nrnd), ntotal, n_ch))
