@@ -108,8 +108,8 @@ def build_prior(m1d, complicated=False):
         mfadd = GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
                                       GPy.mappings.Compound(f2, b))
         # |a*f1 - b*f2|
-        mfsub = Abs(GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
-                                          GPy.mappings.Compound(GPy.mappings.Compound(f2, b), negf)))
+        mfsub = Abs((GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
+                                          GPy.mappings.Compound(GPy.mappings.Compound(f2, b), negf))))
         mf = GPy.mappings.Additive(GPy.mappings.Compound(mfadd, GPy.mappings.Linear(1,1)),
                                    GPy.mappings.Compound(mfsub, GPy.mappings.Linear(1,1)))
     return mf
@@ -153,6 +153,17 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=Fals
     k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
     k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=ARD)
     k = k1 + k2
+    if complicated:
+        # This is just a hack because complicated prior is not
+        # implemented properly. Somehow we can't .copy() it since its
+        # parameters are hidden somewhere... in this case we can't use
+        # previous model's hyperparameters and need to reoptimize for
+        # kernel/mapping parameters each seq optimization (make sure continue_opt=True)
+        if prevmodel:
+            m = GPy.models.GPRegression(X,Y,kernel=prevmodel.sum.copy(), mean_function= build_prior(prior1d, complicated=complicated))
+        else:
+            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, complicated=complicated))
+        return m
     if prevmodel and prior1d:
         m = GPy.models.GPRegression(X,Y,kernel=prevmodel.sum.copy(), mean_function=prevmodel.mapping.copy())
         m.Gaussian_noise.variance = prevmodel.Gaussian_noise.variance
@@ -171,7 +182,9 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=Fals
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=False, dt=dt, complicated=False):
+def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, dt=dt, complicated=False):
+    if complicated:
+        assert(continue_opt, "if complicated is set to True, must set continue_opt to true")
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -419,6 +432,6 @@ if __name__ == "__main__":
     
     # queriedchs, maxchs = run_ch_stats_exps(trains, args)
     X,Y = make_dataset_2d(trains, dt=40)
-    m, train_models_2d(X,Y, complicated=True)
+    m, = train_models_2d(X,Y, complicated=True)
 
     plt.show()
