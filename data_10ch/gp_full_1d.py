@@ -4,7 +4,8 @@ We fit GPs to the full dataset, testing different models and kernels
 
 # Idea:
 # Query new points twice + fit heteroskedastic noise to empirical data
-
+import matplotlib as mpl
+mpl.rcParams['pdf.fonttype'] = 42
 from load_matlab import *
 import numpy as np
 import GPy
@@ -15,9 +16,10 @@ import argparse
 import os
 from os import path
 import itertools
+import pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--uid', type=int, default=1, help='uid for job number')
+parser.add_argument('--uid', type=int, default=2, help='uid for job number')
 parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
 
 # DEFAULT
@@ -213,7 +215,7 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
         norm = colors.Normalize(vmin=-50, vmax=len(m.X))
         for (i,j),y in zip(m.X, m.Y):
             i,j = int(i), int(j)
-            axes[i].plot(j, y, 'x', color=plt.cm.YlGn(norm(t)))
+            axes[i].plot(j, y, 'x', color='C{}'.format(j))
             t+=1
     if plot_acq:
         acqmap = get_acq_map(m)
@@ -224,6 +226,29 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
         #     ax.plot(np.ones(20)*j,trains[ch][ch][dt]['data'].max(axis=1),'x')
         #     ax.plot(j, trains[ch][ch][dt]['meanmax'], 'r+')
         #     ax.errorbar(j, trains[ch][ch][dt]['meanmax'], yerr=2*trains[ch][ch][dt]['stdmax'],ecolor='r')
+
+def plot_model_surface(m, plot_data=True):
+    extra_lim=1
+    x = np.linspace(0-extra_lim,1+extra_lim,50)
+    y = np.linspace(0-extra_lim,4+extra_lim,50)
+    x,y = np.meshgrid(x,y)
+    x_,y_ = x.ravel()[:,None], y.ravel()[:,None]
+    z = np.hstack((x_,y_))
+    mean,var = m.predict(z)
+    std = np.sqrt(var)
+    mean,std = mean.reshape(50,50), std.reshape(50,50)
+
+    fig2 = plt.figure()
+    ax = fig2.gca(projection='3d')
+    ax.set_title("Color represents std")
+    norm = plt.Normalize()
+    surf = ax.plot_surface(x, y, mean, linewidth=0, antialiased=False, facecolors=cm.jet(norm(std)))
+    if plot_data:
+        ax.scatter(m.X[:,0], m.X[:,1], m.Y, c='g')
+    m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
+    m.set_array([])
+    plt.colorbar(m)
+
 
 def l2dist(m1, m2):
     X = np.array(list(itertools.product(range(2), range(5))))
@@ -272,7 +297,7 @@ def run_dist_exps(args):
     plt.ylabel("N random pts")
     plt.xlabel("N sequential")
     plt.colorbar()
-    plt.savefig(os.path.join(exppath, "1d_l2.png"))
+    plt.savefig(os.path.join(exppath, "1d_l2.pdf"))
     plt.close()
 
     plt.figure()
@@ -281,55 +306,51 @@ def run_dist_exps(args):
     plt.ylabel("N random pts")
     plt.xlabel("N sequential")
     plt.colorbar()
-    plt.savefig(os.path.join(exppath, "1d_linf.png"))
+    plt.savefig(os.path.join(exppath, "1d_linf.pdf"))
     plt.close()
 
-def get_ch(x,y):
+def get_ch(xy):
+    x,y = xy
     x = int(x)
     y = int(y)
     return xy2ch[x][y]
 
-def run_lastch_stats_exps(trains, repeat=25, continue_opt=True, k=2):
-    exppath = path.join('exps', '1d', 'lastchstats', 'emg{}'.format(args.emg), 'exp{}'.format(args.uid))
+def get_maxch(m):
+    X = np.array(list(itertools.product(range(2),range(5))))
+    means,_ = m.predict(X)
+    maxidx = means.argmax()
+    maxxy = np.unravel_index(maxidx, (2,5))
+    maxch = get_ch(maxxy)
+    return maxch
+
+def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
+    exppath = path.join('exps', '1d', 'chruns', 'emg{}'.format(args.emg), 'exp{}'.format(args.uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
-    nrnd = range(5,36,10)
-    nseq = range(0,31,10)
-    lastchs = np.zeros((len(nrnd), len(nseq), repeat))
-    fig,axes = plt.subplots(len(nrnd),len(nseq), sharex=True)
-    for i,n1 in enumerate(nrnd):
-        for j,n2 in enumerate(nseq):
-            print(n1,n2)
-            lc = run_lastch_stats_exp(trains, n1,n1+n2, ax=axes[i][j], repeat=repeat, continue_opt=continue_opt, k=k)
-            lastchs[i][j] = lc
-            axes[i][j].set_title("nrnd={}, nseq={}".format(n1,n2))
+    ntotal=100
+    nrnd = range(5,76,10)
+    queriedchs = np.zeros((repeat, len(nrnd), ntotal))
+    maxchs = np.zeros((repeat, len(nrnd), ntotal))
+    for repeat in range(repeat):
+        print("Repeat", repeat)
+        for i,n1 in enumerate(nrnd):
+            print(n1)
+            models = train_model_seq(trains, n_random_pts=n1,
+                                     n_total_pts=ntotal, ARD=False,
+                                     continue_opt=continue_opt, num_restarts=1, k=k)
+            queriedchs[repeat][i] = [get_ch(xy) for xy in models[-1].X]
+            for r,m in enumerate(models,n1-1):
+                maxchs[repeat][i][r] = get_maxch(m)
     dct = {
-        'lastchs': lastchs,
+        'queriedchs': queriedchs,
+        'maxchs': maxchs,
         'nrnd': nrnd,
-        'nseq': nseq,
+        'ntotal': ntotal,
         'true_ch': 17
     }
-    with open(os.path.join(exppath, 'lastchs_dct.pkl'), 'wb') as f:
+    with open(os.path.join(exppath, 'chruns_dct.pkl'), 'wb') as f:
         pickle.dump(dct, f)
-    fig.savefig(os.path.join(exppath, 'lastch1d_k{}'.format(k)))
-    return lastchs
-
-def run_lastch_stats_exp(trains, n_random_pts=10, n_total_pts=30, repeat=25, ax=None, continue_opt=True, k=2):
-    lastchs = []
-    for repeat in range(repeat):
-        models = train_model_seq(trains, n_random_pts=n_random_pts,
-                                 n_total_pts=n_total_pts, ARD=False, continue_opt=continue_opt,
-                                 num_restarts=1, k=k)
-        m = models[-1]
-        x,y = m.X[-1]
-        ch = get_ch(x,y)
-        lastchs.append(ch)
-    lastchs = np.array(lastchs)
-    if ax is None:
-        ax = plt.figure()
-    bins = np.arange(0,lastchs.max() + 1.5) - 0.5
-    ax.hist(lastchs, bins=bins)
-    return lastchs
+    return queriedchs, maxchs
 
 def run_seq_runs_exps(trainsC):
     fig,ax = plt.subplots(1,1)
@@ -348,12 +369,12 @@ def run_seq_runs_exps(trainsC):
     plt.title("Runs with different number of random seed pts")
 
 if __name__ == '__main__':
-    args = parser.parse_args()
-    trainsC = Trains(emg=args.emg)
-    trains = trainsC.trains
-    # X,Y = make_dataset_1d(trains)
-    # m1, = train_models_1d(X,Y)
-    # m2, = train_models_1d(X,Y, ARD=False)
+    # args = parser.parse_args()
+    # trainsC = Trains(emg=args.emg)
+    # trains = trainsC.trains
+    X,Y = make_dataset_1d(trains)
+    m1, = train_models_1d(X,Y)
+    m2, = train_models_1d(X,Y, ARD=False)
     # plot_model_1d(m1, title="homoskedastic")
     # plot_model_1d(m2, title="homoskedastic")
     # plt.show()
@@ -363,10 +384,6 @@ if __name__ == '__main__':
     # n_total=20
     # models = train_model_seq(trains, n_random_pts=n_rnd, n_total_pts=n_total, ARD=False, k=1)
     # plot_seq_stats(models[-1], n_random_pts=n_rnd, trainsC=trainsC, plot_acq=True, plot_gp=False)
-
-    lastchs = run_lastch_stats_exps(trains)
-
-    # run_lastch_stats_exps(k=1)
-    # run_lastch_stats_exps(k=2)
+    
     plt.show()
 

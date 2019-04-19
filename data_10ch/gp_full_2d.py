@@ -15,7 +15,7 @@ import argparse
 import copy
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--uid', type=int, default=0, help='uid for job number')
+parser.add_argument('--uid', type=int, default=1, help='uid for job number')
 parser.add_argument('--dt', type=int, default=0, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')
 parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
 
@@ -212,6 +212,58 @@ def linfdist(m1, m2):
     pred2 = m2.predict(X)[0]
     return abs(pred1.max() - pred2.max())
 
+def get_ch_pair(wxyz):
+    w,x,y,z = wxyz
+    return [get_ch([w,x]), get_ch([y,z])]
+
+def get_maxchpair(m):
+    X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
+    means,_ = m.predict(X)
+    maxidx = means.argmax()
+    maxwxyz = np.unravel_index(maxidx, (2,5,2,5))
+    maxchpair = get_ch_pair(maxwxyz)
+    return maxchpair
+
+def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
+
+    exppath = path.join('exps', '2d', 'chruns', 'emg{}'.format(args.emg),
+                        'dt{}'.format(args.dt), 'exp{}'.format(args.uid))
+    if not path.isdir(exppath):
+        os.makedirs(exppath)
+    ntotal=100
+    n_ch=2
+    n_models=2
+    nrnd = range(15,76,10)
+    # queriedchs contains <n_ch> queried channels for all <repeat> runs of <ntotal>
+    # queries with <nrnd> initial random pts for each of <n_models> models
+    queriedchs = np.zeros((n_models, repeat, len(nrnd), ntotal, n_ch))
+    maxchs = np.zeros((n_models, repeat, len(nrnd), ntotal, n_ch))
+    for repeat in range(repeat):
+        print("Repeat", repeat)
+        for i,n1 in enumerate(nrnd):
+            print(n1, "random init pts")
+            models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
+                                        num_restarts=1, continue_opt=continue_opt, dt=args.dt)
+            modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
+                                             num_restarts=1, continue_opt=continue_opt,
+                                             prior1d=m1d, dt=args.dt)
+            queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
+            queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
+            for r,m in enumerate(models,n1-1):
+                maxchs[0][repeat][i][r] = get_maxchpair(m)
+            for r,m in enumerate(modelsprior,n1-1):
+                maxchs[1][repeat][i][r] = get_maxchpair(m)
+    dct = {
+        'queriedchs': queriedchs,
+        'maxchs': maxchs,
+        'nrnd': nrnd,
+        'ntotal': ntotal,
+        'true_chpair': [17,17]
+    }
+    with open(os.path.join(exppath, 'chruns2d_dct.pkl'), 'wb') as f:
+        pickle.dump(dct, f)
+    return queriedchs
+
 def run_dist_exps(args):
     emgdtpath = path.join('exps', 'emg{}'.format(args.emg), 'dt{}'.format(args.dt))
     exppath = path.join(emgdtpath, 'exp{}'.format(args.uid))
@@ -291,14 +343,7 @@ def run_dist_exps(args):
             plt.savefig(os.path.join(exppath, "2d_linf{}_{}.png".format(name,k)))
             plt.close()
 
-
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-    dt = args.dt
-    trainsC = Trains(emg=args.emg)
-    trains = trainsC.trains
-
+def test_modif_max(trains, args):
     X1d,Y1d = make_dataset_1d(trains)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
 
@@ -318,4 +363,13 @@ if __name__ == "__main__":
     modelsprior = train_model_seq_2d(new_trains,n_random_pts=50, n_total_pts=100, prior1d=m1d, continue_opt=True, fix=True)
     m = modelsprior[-1]
     plot_model_2d(m)
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    dt = args.dt
+    trainsC = Trains(emg=args.emg)
+    trains = trainsC.trains
+
+    run_ch_stats_exps(trains, args)
+
     plt.show()
