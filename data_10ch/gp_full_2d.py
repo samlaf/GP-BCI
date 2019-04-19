@@ -170,7 +170,7 @@ def get_next_x(m, k=2):
 
 def get_acq_map(m, k=2):
     # We use UCB, k is the "exploration" parameter
-    X = np.array(list(itertools.product(range(5),range(2), range(5), range(2))))
+    X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
     mean,var = m.predict(X)
     std = np.sqrt(var)
     acq = mean + k*std
@@ -202,12 +202,12 @@ def plot_model_2d(m, fulldatam=None, title=""):
         ax.plot(x2j, y, 'x', color='C{}'.format(x2j))
 
 def l2dist(m1, m2):
-    X = np.array(list(itertools.product(range(5),range(2), range(5), range(2))))
+    X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
     pred1 = m1.predict(X)[0]
     pred2 = m2.predict(X)[0]
     return LA.norm(pred1-pred2)
 def linfdist(m1, m2):
-    X = np.array(list(itertools.product(range(5),range(2), range(5), range(2))))
+    X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
     pred1 = m1.predict(X)[0]
     pred2 = m2.predict(X)[0]
     return abs(pred1.max() - pred2.max())
