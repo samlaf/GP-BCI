@@ -244,9 +244,9 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
                 fig.add_subplot(ax)
 
 
-    def plot_response_matrix(self, dt=40):
+    def plot_response_matrix(self, emg=2, dt=40):
         fig = plt.figure()
-        plt.suptitle("Matrix of responses for EMG {} with dt={}".format(EMG, dt))
+        plt.suptitle("Matrix of responses for EMG {} with dt={}".format(emg, dt))
         gs = gridspec.GridSpec(12,12)
         for i,ch in enumerate(self.chs):
             ax = plt.subplot(gs[0,i+2])
@@ -254,15 +254,15 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_title(ch)
-            ax.plot(self.trains[ch][ch][0]['data'].T)
-            ax.text(0,0,"{:.2}".format(self.trains[ch][ch][0]['meanmax']))
+            ax.plot(self.emgdct[emg][ch][ch][0]['data'].T)
+            ax.text(0,0,"{:.2}".format(self.emgdct[emg][ch][ch][0]['meanmax']))
 
             ax = plt.subplot(gs[i+2,0])
             ax.set_ylim([0,0.05])
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_ylabel(ch)
-            ax.plot(self.trains[ch][ch][0]['data'].T)
+            ax.plot(self.emgdct[emg][ch][ch][0]['data'].T)
 
         for i,ch1 in enumerate(self.chs):
             for j,ch2 in enumerate(self.chs):
@@ -272,21 +272,21 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
                 ax.set_yticks([])
                 bbox = None
                 if ch1!=ch2:
-                    plt.plot(self.trains[ch1][ch2][dt]['data'].T)
-                    mm = self.trains[ch1][ch2][dt]['meanmax']
+                    plt.plot(self.emgdct[emg][ch1][ch2][dt]['data'].T)
+                    mm = self.emgdct[emg][ch1][ch2][dt]['meanmax']
                     if mm > 0.01:
                         bbox = dict(facecolor='red', alpha=0.5)
                     plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
                 else:
-                    plt.plot(self.trains[ch1][ch1][dt]['data'].T)
-                    mm = self.trains[ch1][ch1][dt]['meanmax']
+                    plt.plot(self.emgdct[emg][ch1][ch1][dt]['data'].T)
+                    mm = self.emgdct[emg][ch1][ch1][dt]['meanmax']
                     if mm > 0.01:
                         bbox = dict(facecolor='red', alpha=0.5)
                     plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
 
 if __name__ == "__main__":
-    trainsC = Trains(emg=EMG)
-    trainsC.build_f_grid_1d()
+    # trainsC = Trains(emg=EMG)
+    # trainsC.build_f_grid_1d()
     # print(trains.build_f_grid())
     # print(trains.build_1d_prior())
     # trains.plot_2d(dt=40, usestd=False)
@@ -294,6 +294,6 @@ if __name__ == "__main__":
     # trains.plot_2d_priors()
     # trains.plot_single_means()
     # trains.plot_single_responses()
-    # for dt in DTS[0:2]:
-    #     trains.plot_response_matrix(dt=dt)
-    # plt.show()
+    for dt in DTS:
+        trainsC.plot_response_matrix(emg=4, dt=dt)
+    plt.show()

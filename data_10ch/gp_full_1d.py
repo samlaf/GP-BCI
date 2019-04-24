@@ -203,11 +203,16 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
                              sharex=True,
                              sharey=True)
     lengthscales = [m.Mat52.lengthscale[i] for i in range(len(m.Mat52.lengthscale))]
-    fig.suptitle(("{}: ls="+" {:.2} "*len(lengthscales)).format(title,*lengthscales))
+    #fig.suptitle(("{}: ls="+" {:.2}
+    #"*len(lengthscales)).format(title,*lengthscales))
+    if title:
+        title = 'Channels {}'.format(xy2ch[i])
     for i,ax in zip([0,1],axes):
         m.plot(ax=ax, fixed_inputs=[(0,i)],
-               plot_data=False, title='Channels {}'.format(xy2ch[i]),
+               plot_data=False, title=title,
                lower=17, upper=83, legend=False)
+        #m.plot_confidence(ax=ax, fixed_inputs=[(0,i)], label='std', lower=17, upper=83)
+        #m.plot_mean(ax=ax, fixed_inputs=[(0,i)])
         # Plot data (m.plot plots all of the data in every slice, which is
         # wrong)
     if plot_data:
@@ -222,6 +227,7 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
         axes[1].plot(acqmap[:5], c='y', label='acq fct')
         axes[0].plot(acqmap[5:], c='y', label='acq fct')
     axes[0].legend()
+    axes[0].set_xticks([0,1,2,3,4])
         # for j,ch in enumerate(xy2ch[i]):
         #     ax.plot(np.ones(20)*j,trains[ch][ch][dt]['data'].max(axis=1),'x')
         #     ax.plot(j, trains[ch][ch][dt]['meanmax'], 'r+')
@@ -380,9 +386,9 @@ if __name__ == '__main__':
     # plt.show()
 
     # test seq model
-    # n_rnd = 10
-    # n_total=20
-    # models = train_model_seq(trains, n_random_pts=n_rnd, n_total_pts=n_total, ARD=False, k=1)
+    n_rnd = 45
+    n_total=90
+    models = train_model_seq(trains, n_random_pts=n_rnd, n_total_pts=n_total, ARD=False, k=2)
     # plot_seq_stats(models[-1], n_random_pts=n_rnd, trainsC=trainsC, plot_acq=True, plot_gp=False)
     
     plt.show()

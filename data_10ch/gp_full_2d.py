@@ -73,9 +73,10 @@ class Abs(GPy.core.Mapping):
 
     def gradients_X(self, dL_dF, X):
         if X >= 0:
-            return X
+            # TODO: should this be 1/-1?
+            return dL_dF
         else:
-            return -X
+            return -dL_dF
 
 
 def build_prior(m1d, complicated=False):
