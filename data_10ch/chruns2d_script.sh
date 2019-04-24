@@ -23,7 +23,13 @@ then
 else
   UID=$3-$SLURM_JOBID
 fi
+if [ -z "$4" ]
+then
+    COMPLICATED=""
+else
+    COMPLICATED="--complicated"
+fi
 
 source /network/home/laferris/.bashrc
 conda activate gp
-python chruns_2d.py --uid $UID --emg $EMG --dt $DT
+python chruns_2d.py --uid $UID --emg $EMG --dt $DT $COMPLICATED

@@ -15,7 +15,7 @@ import argparse
 import copy
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--uid', type=int, default=1, help='uid for job number')
+parser.add_argument('--uid', type=str, default=1, help='uid for job number')
 parser.add_argument('--dt', type=int, default=0, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')
 parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
 
@@ -184,7 +184,8 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=Fals
 
 def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, dt=dt, complicated=False):
     if complicated:
-        assert(continue_opt, "if complicated is set to True, must set continue_opt to true")
+        assert(continue_opt), "if complicated is True, must set continue_opt to true"
+        assert(prior1d is not None), "if complicated is True, must give prior1d"
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -278,16 +279,16 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicated=False):
+def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicated=False, ntotal=100, nrnd = [15,76,10]):
 
+    assert(type(nrnd) is list and len(nrnd) == 3)
+    nrnd = range(*nrnd)
     exppath = path.join('exps', '2d', 'chruns', 'emg{}'.format(args.emg),
                         'dt{}'.format(args.dt), 'exp{}'.format(args.uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
-    ntotal=100
     n_ch=2
     n_models=2
-    nrnd = range(15,76,10)
     # Build 1d model for modelsprior
     X1d,Y1d = make_dataset_1d(trains)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
@@ -301,7 +302,7 @@ def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicat
             print(n1, "random init pts")
             models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
                                         num_restarts=1, continue_opt=continue_opt,
-                                        dt=args.dt, complicated=complicated)
+                                        dt=args.dt)
             modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                              prior1d=m1d, dt=args.dt, complicated=complicated)
@@ -318,7 +319,9 @@ def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicat
         'ntotal': ntotal,
         'true_chpair': [17,17]
     }
-    with open(os.path.join(exppath, 'chruns2d_dct.pkl'), 'wb') as f:
+    filename = os.path.join(exppath, 'chruns2d_dct.pkl')
+    print("Saving stats dictionary to: {}".format(filename))
+    with open(filename, 'wb') as f:
         pickle.dump(dct, f)
     return queriedchs, maxchs
 
