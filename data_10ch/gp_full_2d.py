@@ -21,8 +21,10 @@ parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. b
 
 # DEFAULT
 dt=0
+emg=2
 
-def make_dataset_2d(trains, means=False, dt=dt, n=None):
+def make_dataset_2d(trainsC, emg=emg, dt=dt, means=False, n=None):
+    trains = trainsC.get_emgdct(emg)
     X = []
     Y = []
     Xmean = []
@@ -50,10 +52,6 @@ def make_dataset_2d(trains, means=False, dt=dt, n=None):
         Xmean = np.array(Xmean)
         Ymean = np.array(Ymean).reshape((-1,1))
         return Xmean, Ymean
-    # if n:
-    #     # We take n random elements only
-    #     X = random.sample(X, n)
-    #     Y = random.sample(Y, n)
     X = np.array(X)
     Y = np.array(Y).reshape((-1,1))
     return X,Y
@@ -79,7 +77,7 @@ class Abs(GPy.core.Mapping):
             return -dL_dF
 
 
-def build_prior(m1d, complicated=False):
+def build_prior(m1d, dtprior=False):
     f1 = GPy.core.Mapping(4,1)
     def f_1(x):
         return m1d.predict(x[:,0:2])[0]
@@ -92,7 +90,7 @@ def build_prior(m1d, complicated=False):
     f2.f = f_2
     f2.update_gradients = lambda a,b: None
 
-    if not complicated:
+    if not dtprior:
         # prior = a*f1 + b*f2
         mf = GPy.mappings.Additive(GPy.mappings.Compound(f1, GPy.mappings.Linear(1,1)),
                                    GPy.mappings.Compound(f2, GPy.mappings.Linear(1,1)))
@@ -115,7 +113,7 @@ def build_prior(m1d, complicated=False):
                                    GPy.mappings.Compound(mfsub, GPy.mappings.Linear(1,1)))
     return mf
 
-def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=True, ARD=False, complicated=False):
+def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=True, ARD=False, dtprior=False):
     kernels = []
     # Additive kernel
     if 'add' in models:
@@ -139,7 +137,7 @@ def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=
     models = []
     for k in kernels:
         if prior1d:
-            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, complicated=complicated))
+            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, dtprior=dtprior))
             m.sum.Mat52.lengthscale = m.sum.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
             m.sum.Mat52.variance = m.sum.Mat52_1.variance = prior1d.Mat52.variance
             m.Gaussian_noise.variance = prior1d.Gaussian_noise.variance
@@ -150,20 +148,20 @@ def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=
         models.append(m)
     return models
 
-def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=False):
+def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
     k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
     k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=ARD)
     k = k1 + k2
-    if complicated:
-        # This is just a hack because complicated prior is not
+    if dtprior:
+        # This is just a hack because dtprior prior is not
         # implemented properly. Somehow we can't .copy() it since its
         # parameters are hidden somewhere... in this case we can't use
         # previous model's hyperparameters and need to reoptimize for
         # kernel/mapping parameters each seq optimization (make sure continue_opt=True)
         if prevmodel:
-            m = GPy.models.GPRegression(X,Y,kernel=prevmodel.sum.copy(), mean_function= build_prior(prior1d, complicated=complicated))
+            m = GPy.models.GPRegression(X,Y,kernel=prevmodel.sum.copy(), mean_function= build_prior(prior1d, dtprior=dtprior))
         else:
-            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, complicated=complicated))
+            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, dtprior=dtprior))
         return m
     if prevmodel and prior1d:
         m = GPy.models.GPRegression(X,Y,kernel=prevmodel.sum.copy(), mean_function=prevmodel.mapping.copy())
@@ -175,7 +173,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=Fals
         m.Gaussian_noise.variance = prevmodel.Gaussian_noise.variance
     elif prior1d:
         #We are building a model for first time, but with a 1d prior
-        m = GPy.models.GPRegression(X,Y,k, mean_function=build_prior(prior1d, complicated=complicated))
+        m = GPy.models.GPRegression(X,Y,k, mean_function=build_prior(prior1d, dtprior=dtprior))
         m.sum.Mat52.lengthscale = m.sum.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
         m.sum.Mat52.variance = m.sum.Mat52_1.variance = prior1d.Mat52.variance
         m.Gaussian_noise.variance = prior1d.Gaussian_noise.variance
@@ -183,10 +181,11 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, complicated=Fals
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, dt=dt, complicated=False):
-    if complicated:
-        assert(continue_opt), "if complicated is True, must set continue_opt to true"
-        assert(prior1d is not None), "if complicated is True, must give prior1d"
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, dt=dt, dtprior=False):
+    trains = trainsC.get_emgdct(emg)
+    if dtprior:
+        assert(continue_opt), "if dtprior is True, must set continue_opt to true"
+        assert(prior1d is not None), "if dtprior is True, must give prior1d"
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -197,7 +196,7 @@ def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, 
         Y.append(resp)
     #We save every model after each query
     models = []
-    m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, complicated=complicated)
+    m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, dtprior=dtprior)
     if fix:
         # fix all kernel parameters and only optimize for mean (prior) mapping
         m.sum.fix()
@@ -211,7 +210,7 @@ def train_model_seq_2d(trains, n_random_pts=10, n_total_pts=15, num_restarts=1, 
         ch2 = xy2ch[nextx[2]][nextx[3]]
         resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
         Y.append(resp)
-        m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, complicated=complicated)
+        m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, dtprior=dtprior)
         # If continue optimize, we optimize params after every query
         if continue_opt:
             m.optimize_restarts(num_restarts=num_restarts)
@@ -232,6 +231,9 @@ def get_acq_map(m, k=2):
     acq = mean + k*std
     return X,acq
 
+def make_2d_grid():
+    return np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
+
 # Code for generating plots
 def plot_model_2d(m, fulldatam=None, title=""):
     fig, axes = plt.subplots(4,5, sharex=True, sharey=True)
@@ -246,7 +248,7 @@ def plot_model_2d(m, fulldatam=None, title=""):
                 m.plot(ax=ax, fixed_inputs=[(0,i),(1,j),(2,x2i)], plot_data=False, legend=False)
                 
                 # We also plot the max found
-                maxx = m.predict(make_dataset_2d(trains,means=True)[0])[0].max()
+                maxx = m.predict(make_2d_grid())[0].max()
                 x = np.arange(0,4,0.1)
                 ax.plot(x,np.ones(len(x))*maxx, c='r')
                 # And the mean of the full-data-gp, if present
@@ -258,7 +260,7 @@ def plot_model_2d(m, fulldatam=None, title=""):
         ax.plot(x2j, y, 'x', color='C{}'.format(x2j))
 
 def l2dist(m1, m2):
-    X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
+    X = make_2d_grid()
     pred1 = m1.predict(X)[0]
     pred2 = m2.predict(X)[0]
     return LA.norm(pred1-pred2)
@@ -266,6 +268,7 @@ def linfdist(m1, m2):
     X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
     pred1 = m1.predict(X)[0]
     pred2 = m2.predict(X)[0]
+    # Note that in the 1d linfdist, we divide by pred2.max() so as to normalize
     return abs(pred1.max() - pred2.max())
 
 def get_ch_pair(wxyz):
@@ -280,12 +283,13 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicated=False, ntotal=100, nrnd = [15,76,10]):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10]):
 
     assert(type(nrnd) is list and len(nrnd) == 3)
+    trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'chruns', 'emg{}'.format(args.emg),
-                        'dt{}'.format(args.dt), 'exp{}'.format(args.uid))
+    exppath = path.join('exps', '2d', 'chruns', 'emg{}'.format(emg),
+                        'dt{}'.format(dt), 'exp{}'.format(uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     n_ch=2
@@ -303,10 +307,10 @@ def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2, complicat
             print(n1, "random init pts")
             models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
                                         num_restarts=1, continue_opt=continue_opt,
-                                        dt=args.dt)
+                                        dt=dt)
             modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                             prior1d=m1d, dt=args.dt, complicated=complicated)
+                                             prior1d=m1d, dt=dt, dtprior=dtprior)
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
             for r,m in enumerate(models,n1-1):
@@ -333,12 +337,12 @@ def run_dist_exps(args):
         os.makedirs(exppath)
 
     trainsC = Trains(emg=args.emg)
-    trains = trainsC.trains
+    trains = trainsC.get_emgdct(args.emg)
 
     X1d,Y1d = make_dataset_1d(trains)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
 
-    X,Y = make_dataset_2d(trains, dt=args.dt)
+    X,Y = make_dataset_2d(trainsC, emg=args.emg, dt=args.dt)
     
     # Note that the full-data models can be shared for all exps (with
     # same emg and dt).
@@ -405,37 +409,16 @@ def run_dist_exps(args):
             plt.savefig(os.path.join(exppath, "2d_linf{}_{}.png".format(name,k)))
             plt.close()
 
-def test_modif_max(trains, args):
-    X1d,Y1d = make_dataset_1d(trains)
-    m1d, = train_models_1d(X1d,Y1d, ARD=False)
-
-    # We test changing the max,
-    # and changing the dataset
-    new_trains = copy.deepcopy(trains)
-    for ch in [6,13,21,17]:
-        new_trains[17][ch][dt]['data'] /= 2
-        new_trains[17][17][dt]['meanmax'] = new_trains[17][ch][dt]['data'].max(axis=1).mean()
-        new_trains[ch][17][dt]['data'] /= 2
-        new_trains[ch][17][dt]['meanmax'] = new_trains[ch][17][dt]['data'].max(axis=1).mean()
-
-    Xmean,Ymean = make_dataset_2d(new_trains, dt=args.dt, means=True)
-    madd, = train_models_2d(Xmean,Ymean, ARD=False)
-    plot_model_2d(madd)
-
-    modelsprior = train_model_seq_2d(new_trains,n_random_pts=50, n_total_pts=100, prior1d=m1d, continue_opt=True, fix=True)
-    m = modelsprior[-1]
-    plot_model_2d(m)
-
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
     dt = args.dt
+    emg = args.emg
     trainsC = Trains(emg=args.emg)
-    trains = trainsC.trains
     
     # queriedchs, maxchs = run_ch_stats_exps(trains, args)
-    X,Y = make_dataset_2d(trains, dt=40)
-    m, = train_models_2d(X,Y, complicated=True)
+    X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt)
+    m, = train_models_2d(X,Y, dtprior=True)
 
     plt.show()
