@@ -286,8 +286,8 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10]):
-    if uid is None:
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10]):
+    if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
@@ -309,15 +309,15 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid=None, repeat=25, continue_opt
         print("Repeat", repeat)
         for i,n1 in enumerate(nrnd):
             print(n1, "random init pts")
-            models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
+            models = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                         num_restarts=1, continue_opt=continue_opt,
-                                        dt=dt)
-            modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
+                                        dt=dt, emg=emg)
+            modelsprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                             prior1d=m1d, dt=dt, dtprior=False)
-            modelsdtprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
+                                             prior1d=m1d, dt=dt, emg=emg, dtprior=False)
+            modelsdtprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                               prior1d=m1d, dt=dt, dtprior=True)
+                                               prior1d=m1d, dt=dt, emg=emg, dtprior=True)
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
             queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]

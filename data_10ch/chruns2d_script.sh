@@ -2,7 +2,7 @@
 #SBATCH -o /network/tmp1/laferris/slurm-%j.out
 
 ## this script is called as
-## sbatch chruns2d_script.sh <emg> <dt>
+## sbatch chruns2d_script.sh <emg> <dt> <uid> <--dtprior>
 ## where <emg> is optional, and defaults to 2
 
 if [ -z "$1" ]
@@ -25,11 +25,11 @@ else
 fi
 if [ -z "$4" ]
 then
-    COMPLICATED=""
+    DTPRIOR=""
 else
-    COMPLICATED="--complicated"
+    DTPRIOR="--dtprior"
 fi
 
 source /network/home/laferris/.bashrc
 conda activate gp
-python chruns_2d.py --uid $UID --emg $EMG --dt $DT $COMPLICATED
+python chruns_2d.py --emg $EMG --dt $DT --uid $UID $DTPRIOR
