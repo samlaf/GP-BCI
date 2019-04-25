@@ -62,6 +62,7 @@ class Abs(GPy.core.Mapping):
         assert(output_dim == 1)
         super(Abs, self).__init__(input_dim=input_dim, output_dim=output_dim)
         self.mapping = mapping
+        self.link_parameters(mapping)
 
     def f(self, X):
         return np.abs(self.mapping.f(X))
@@ -107,8 +108,10 @@ def build_prior(m1d, dtprior=False):
         mfadd = GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
                                       GPy.mappings.Compound(f2, b))
         # |a*f1 - b*f2|
-        mfsub = Abs((GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
-                                          GPy.mappings.Compound(GPy.mappings.Compound(f2, b), negf))))
+        # NOTE: this doesn't work at the moment
+        # When added to mfsub, 'a' will somehow remove the 'a' from mfadd
+        mfsub = Abs(GPy.mappings.Additive(GPy.mappings.Compound(f1, a),
+                                          GPy.mappings.Compound(GPy.mappings.Compound(f2, b), negf)))
         mf = GPy.mappings.Additive(GPy.mappings.Compound(mfadd, GPy.mappings.Linear(1,1)),
                                    GPy.mappings.Compound(mfsub, GPy.mappings.Linear(1,1)))
     return mf
@@ -283,17 +286,18 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10]):
-
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10]):
+    if uid is None:
+        uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'chruns', 'emg{}'.format(emg),
+    exppath = path.join('exps', '2d', 'emg{}'.format(emg),
                         'dt{}'.format(dt), 'exp{}'.format(uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     n_ch=2
-    n_models=2
+    n_models=3
     # Build 1d model for modelsprior
     X1d,Y1d = make_dataset_1d(trains)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
@@ -310,19 +314,29 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
                                         dt=dt)
             modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                             prior1d=m1d, dt=dt, dtprior=dtprior)
+                                             prior1d=m1d, dt=dt, dtprior=False)
+            modelsdtprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=ntotal,
+                                             num_restarts=1, continue_opt=continue_opt,
+                                               prior1d=m1d, dt=dt, dtprior=True)
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
+            queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
             for r,m in enumerate(models,n1-1):
                 maxchs[0][repeat][i][r] = get_maxchpair(m)
             for r,m in enumerate(modelsprior,n1-1):
                 maxchs[1][repeat][i][r] = get_maxchpair(m)
+            for r,m in enumerate(modelsdtprior,n1-1):
+                maxchs[2][repeat][i][r] = get_maxchpair(m)
     dct = {
         'queriedchs': queriedchs,
         'maxchs': maxchs,
         'nrnd': nrnd,
         'ntotal': ntotal,
-        'true_chpair': [17,17]
+        'emg': emg,
+        'dt': dt,
+        'uid': uid,
+        'repeat': repeat,
+        'true_chpair': trainsC.max_ch_2d(emg,dt)
     }
     filename = os.path.join(exppath, 'chruns2d_dct.pkl')
     print("Saving stats dictionary to: {}".format(filename))
@@ -416,9 +430,25 @@ if __name__ == "__main__":
     dt = args.dt
     emg = args.emg
     trainsC = Trains(emg=args.emg)
+    trains = trainsC.get_emgdct(args.emg)
+
+    X1d,Y1d = make_dataset_1d(trains)
+    m1d, = train_models_1d(X1d,Y1d, ARD=False)
     
     # queriedchs, maxchs = run_ch_stats_exps(trains, args)
-    X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt)
-    m, = train_models_2d(X,Y, dtprior=True)
-
+    X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt, means=True)
+    # models = train_model_seq_2d(trainsC, 50, 100)
+    # m = models[-1]
+    # m, = train_models_2d(X,Y, dtprior=True)
+    p=build_prior(m1d, dtprior=True)
+    k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=False)
+    k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=False)
+    k = k1 + k2
+    m = GPy.models.GPRegression(X,Y,k, mean_function=p)
+    print(p)
+    print(p.mapping.mapping1.mapping1.mapping2)
+    m.optimize()
+    print(p)
+    print(p.mapping.mapping1.mapping1.mapping2)
+    
     plt.show()

@@ -116,7 +116,7 @@ def plot_seq_values(m, n_random_pts, trainsC=None, ax=None, legend=False):
     ax.plot(range(n_random_pts, len(m.Y)), m.Y[n_random_pts:,:], c='r', label="Sequential pts")
     ax.set_title("Value of selected channel")
     if trainsC:
-        maxch = trainsC.max_ch()
+        maxch = trainsC.max_ch_1d()
         for i,resp in enumerate(m.Y):
             x,y = m.X[i]
             ch = xy2ch[int(x)][int(y)]
@@ -133,7 +133,7 @@ def plot_conseq_dists(m, n_random_pts, trainsC = None, ax=None, legend=False):
     ax.plot(range(n_random_pts, len(dists)), dists[n_random_pts:], c='r', label="Sequential pts")
     ax.set_title("Distance between consecutive channels")
     if trainsC:
-        maxch = trainsC.max_ch()
+        maxch = trainsC.max_ch_1d()
         label="max channel ({})".format(maxch)
         for i,dist in enumerate(dists):
             x,y = m.X[i]
@@ -367,7 +367,7 @@ def run_seq_runs_exps(trainsC):
         m = models[-1]
         ax.plot(range(n1, len(m.Y)), m.Y[n1:,:], label="Sequential pts", c='C{}'.format(i))
         if trainsC:
-            maxch = trainsC.max_ch()
+            maxch = trainsC.max_ch_1d()
             x,y = m.X[-1]
             ch = xy2ch[int(x)][int(y)]
             if ch == maxch:

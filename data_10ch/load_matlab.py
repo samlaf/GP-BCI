@@ -101,12 +101,15 @@ class Trains:
 
         self.trains = self.emgdct[emg]
 
+    ######### GETTERS ############
+    def get_emgdct(self, emg):
+        return self.emgdct[emg]
 
-    def build_f_grid(self, dt=40, f='meanmax'):
+    def build_f_grid(self, emg=2, dt=40, f='meanmax'):
         z_grid = np.zeros((self.n_ch,self.n_ch))
         for i,ch1 in enumerate(self.chs):
             for j,ch2 in enumerate(self.chs):
-                z_grid[i][j] = self.trains[ch1][ch2][dt][f]
+                z_grid[i][j] = self.emgdct[emg][ch1][ch2][dt][f]
         return z_grid
 
     def build_f_grid_1d(self, f='meanmax'):
@@ -117,7 +120,12 @@ class Trains:
             grid[x][y] = self.trains[ch][ch][0][f]
         return grid
 
-    def max_ch(self):
+    def max_ch_2d(self, emg=2, dt=40):
+        grid = self.build_f_grid(emg, dt)
+        x,y = np.unravel_index(grid.argmax(), grid.shape)
+        return [self.chs[x], self.chs[y]]
+
+    def max_ch_1d(self):
         grid = self.build_f_grid_1d()
         x,y = np.unravel_index(grid.argmax(), grid.shape)
         return xy2ch[x][y]
