@@ -184,7 +184,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, dt=dt, dtprior=False):
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, dt=dt, dtprior=False, sa=True):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
@@ -207,7 +207,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1,
     m.optimize_restarts(num_restarts=num_restarts)
     models.append(m)
     for _ in range(n_total_pts-n_random_pts):
-        nextx = get_next_x(m)
+        nextx = get_next_x(m, sa=sa)
         X.append(nextx)
         ch1 = xy2ch[nextx[0]][nextx[1]]
         ch2 = xy2ch[nextx[2]][nextx[3]]
@@ -220,10 +220,22 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1,
         models.append(m)
     return models
 
-def get_next_x(m, k=2):
+def softmax(x, T=0.001):
+    e = np.exp(x/T)
+    return e/sum(e)
+
+def get_next_x(m, k=2, sa=False):
     X,acq = get_acq_map(m,k)
-    maxidx = acq.argmax()
-    nextx = X[maxidx]
+    if sa:
+        # SA is for simulated annealing (sample instead of taking max)
+        # For now we just normalize (since all >0). We could try
+        # softmax instead
+        normalize = acq.flatten()/sum(acq)
+        sm = softmax(acq).flatten()
+        nextidx = np.random.choice(range(len(acq)), p=sm)
+    else:
+        nextidx = acq.argmax()
+    nextx = X[nextidx]
     return nextx
 
 def get_acq_map(m, k=2):
@@ -238,7 +250,7 @@ def make_2d_grid():
     return np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
 
 # Code for generating plots
-def plot_model_2d(m, fulldatam=None, title=""):
+def plot_model_2d(m, fulldatam=None, title="", plot_acq=True):
     fig, axes = plt.subplots(4,5, sharex=True, sharey=True)
     fig.suptitle(title)
     for i in [0,1]:
@@ -261,6 +273,12 @@ def plot_model_2d(m, fulldatam=None, title=""):
         x1i,x1j,x2i,x2j = int(x1i), int(x1j), int(x2i), int(x2j)
         ax = axes[2*x1i+x2i][x1j]
         ax.plot(x2j, y, 'x', color='C{}'.format(x2j))
+    if plot_acq:
+        plt.figure()
+        _,acq = get_acq_map(m)
+        sm = softmax(acq).reshape((10,10))
+        plt.imshow(sm)
+        plt.colorbar()
 
 def l2dist(m1, m2):
     X = make_2d_grid()
@@ -286,14 +304,13 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10]):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'emg{}'.format(emg),
-                        'dt{}'.format(dt), 'exp{}'.format(uid))
+    exppath = path.join('exps', '2d', 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'exp{}'.format(uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     n_ch = 2 # pair of channel for 2d experiment
@@ -313,10 +330,10 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
             print(n1, "random init pts")
             models = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                         num_restarts=1, continue_opt=continue_opt,
-                                        dt=dt, emg=emg)
+                                        dt=dt, emg=emg, sa=sa)
             modelsprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                             prior1d=m1d, dt=dt, emg=emg, dtprior=False)
+                                             prior1d=m1d, dt=dt, emg=emg, dtprior=False, sa=sa)
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
             for r,m in enumerate(models,n1-1):
@@ -328,7 +345,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
             if dtprior:
                 modelsdtprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                               prior1d=m1d, dt=dt, emg=emg, dtprior=True)
+                                                   prior1d=m1d, dt=dt, emg=emg, dtprior=True, sa=sa)
                 queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
                 for r,m in enumerate(modelsdtprior,n1-1):
                     maxchs[2][repeat][i][r] = get_maxchpair(m)
@@ -440,21 +457,15 @@ if __name__ == "__main__":
     trainsC = Trains(emg=args.emg)
     trains = trainsC.get_emgdct(args.emg)
 
-    D = run_ch_stats_exps(trainsC, repeat=1, ntotal=40, nrnd=[10,30,10])
-    # todo:
-    # 0) load fulldatam (like in run_dist_exps) to save time and not
-    # have to train full model every time
-    # 1) plot graphs for this to make sure data structure is fine
-    # 2) rerun using full out args (repeat=25)
-    # 3) implement simulated annealing acq fct
+    D = run_ch_stats_exps(trainsC, repeat=1, ntotal=40, nrnd=[10,30,10], sa=True)
 
-    # X1d,Y1d = make_dataset_1d(trains)
+    # X1d,Y1d = make_dataset_1d(trainsC)
     # m1d, = train_models_1d(X1d,Y1d, ARD=False)
     
     # # queriedchs, maxchs = run_ch_stats_exps(trains, args)
     # X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt, means=True)
-    # models = train_model_seq_2d(trainsC, 50, 100, prior1d=m1d, dtprior=False)
+    # models = train_model_seq_2d(trainsC, 50, 50, prior1d=m1d, dtprior=False)
     # m = models[-1]
-    # # m, = train_models_2d(X,Y, dtprior=True)
+    # m, = train_models_2d(X,Y, dtprior=True)
     
     plt.show()
