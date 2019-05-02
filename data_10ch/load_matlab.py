@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from datetime import datetime, date, time
 import matplotlib.gridspec as gridspec
 import random
+import itertools
 
 """
 # TODO #
@@ -84,14 +85,17 @@ class Trains:
                         dct[ch1][ch2][0] = dct[ch2][ch1][0] = {'data': np.vstack((filtdata[emg,i,j,0], filtdata[emg,j,i,0]))}
                     ch = dct[ch1][ch2][0]['data']
                     maxs = ch.max(axis=1)
+                    dct[ch1][ch2][0]['maxs'] = dct[ch2][ch1][0]['maxs'] = maxs
                     dct[ch1][ch2][0]['meanmax'] = dct[ch2][ch1][0]['meanmax'] = maxs.mean()
                     dct[ch1][ch2][0]['stdmax'] = dct[ch2][ch1][0]['stdmax'] = maxs.std()
-                    for k,dt in enumerate(self.dts[1:]):
+                    # Then we deal with dt!=0
+                    for k,dt in enumerate(self.dts[1:],1):
                         dct[ch1][ch2][dt] = {'data': filtdata[emg,i,j,k]}
                         # We also precompute the meanmax and stdmax
                         # statistics
                         ch = dct[ch1][ch2][dt]['data']
                         maxs = ch.max(axis=1)
+                        dct[ch1][ch2][dt]['maxs'] = maxs
                         dct[ch1][ch2][dt]['meanmax'] = maxs.mean()
                         dct[ch1][ch2][dt]['stdmax'] = maxs.std()
             self.emgdct[emg] = dct
@@ -120,6 +124,20 @@ class Trains:
             grid[x][y] = self.trains[ch][ch][0][f]
         return grid
 
+    def synergy(self, emg1, emg2, ch1, ch2, dt=0, tau=40, a=1, b=1):
+        # synergy is just a linear combination of emgs
+        # We use these to define a new cost function (max synergy
+        # instead of max of a particular channel)
+        # dt is dt between stim pulses
+        # tau is how much we shift resp2
+        resps1 = self.emgdct[emg1][ch1][ch2][dt]['data']
+        resps2 = self.emgdct[emg2][ch1][ch2][dt]['data']
+        # resps are 1466 (resps1.shape[1]) ticks ts, which last 300ms
+        dtidx = int(tau/300*resps1.shape[1])+1
+        resps2_shifted = np.zeros_like(resps2)
+        resps2_shifted[:,:-dtidx] = resps2[:,dtidx:]
+        return a*resps1 + b*resps2_shifted
+
     def max_ch_2d(self, emg=2, dt=40):
         grid = self.build_f_grid(emg, dt)
         x,y = np.unravel_index(grid.argmax(), grid.shape)
@@ -129,78 +147,6 @@ class Trains:
         grid = self.build_f_grid_1d()
         x,y = np.unravel_index(grid.argmax(), grid.shape)
         return xy2ch[x][y]
-
-    def build_1d_prior(self, f='meanmax'):
-        """ This function returns the function f evaluated at each point of the 2x5 grid.
-We call it 1d to contrast with 2d trains (2 channels simulated at the same time)"""
-        prior = np.zeros_like(self.n_ch)
-        for i,ch in enumerate(self.chs):
-            prior[i] = self.trains[ch][ch][0][f]
-        return prior
-
-    # Plot the response graph for a given delta_t (0,10,20,40)
-    def plot_2d(self, dt=40,f='meanmax', usestd=True, ax=None, title=None, zmax=None):
-        """ f can be either a str (which will be used to call build_f_grid)
-        or a grid already built, for eg. grid of diff between response and prior"""
-        x = list(range(self.n_ch))
-        y = list(range(self.n_ch))
-        x_grid, y_grid = np.meshgrid(x,y)
-        if type(f) == str:
-            z_grid = self.build_f_grid(dt,f)
-        else:
-            z_grid = f
-
-        if ax is None:
-            ax = plt.subplot(1,1,1,projection='3d')
-        ax.get_xaxis().set_ticks(x)
-        ax.get_yaxis().set_ticks(y)
-        if title is None:
-            ax.set_title('delta_t = {}'.format(dt))
-        else:
-            ax.set_title(title)
-        if zmax is not None:
-            ax.set_zlim([0,zmax])
-        surf = ax.plot_surface(x_grid, y_grid, z_grid,
-                           #cmap=cm.coolwarm,
-                           linewidth=0, antialiased=False)
-        if usestd:
-            std_grid = self.build_f_grid(dt,f='stdmax')
-            # We plot 1 std deviation above and below the mean
-            std_min = z_grid - std_grid
-            std_max = z_grid + std_grid
-            ax.scatter(x_grid, y_grid, std_min, c='red')
-            ax.scatter(x_grid, y_grid, std_max, c='red')
-            # We plotted the scatter for aesthetic reasons,
-            # now we plot 2d lines to show the std_dev more clearly
-            for x,y,smin,smax in zip(x_grid.flatten(), y_grid.flatten(),
-                                     std_min.flatten(), std_max.flatten()):
-                xs = np.ones(100) * x
-                ys = np.ones(100) * y
-                zs = np.linspace(smin,smax,100)
-                ax.plot(xs, ys, zs, c='red', alpha=0.3)
-
-    
-    def plot_all_2d(self, f='meanmax', zmax=None, usestd=True):
-        plt.figure()
-        for i,dt in enumerate(self.dts,1):
-            ax = plt.subplot(2,4,i,projection='3d')
-            self.plot_2d(dt,f,ax=ax, zmax=zmax, usestd=usestd)
-
-    def plot_2d_priors(self):
-        resp2d = self.build_f_grid()
-        prior1d = self.build_1d_prior().reshape((self.n_ch,1))
-        prior2d_add = (prior1d + prior1d.T) * 1/2
-        prior2d_mult = (prior1d * prior1d.T)
-        diff_add = resp2d - prior2d_add
-        diff_mult = resp2d - prior2d_mult
-        plt.figure()
-        for i,(z_grid,title) in enumerate([(prior2d_add, "prior2d_add"),
-                                           (diff_add, "diff_add"),
-                                           (prior2d_mult, "prior2d_mult"),
-                                           (diff_mult, "diff_mult")],
-                                          1):
-            ax = plt.subplot(2,2,i,projection='3d')
-            self.plot_2d(f=z_grid, usestd=False, title=title, ax=ax)
 
     # Following 2 functions are used in GP.py
     def sampleResp(self,x,y):
@@ -217,11 +163,119 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
     def xy2ch(self,x,y):
         return xy2ch[x][y]
 
+    #################  PLOTTING ###########
+    
+    def plot_emg_resps(self, ch1, ch2, emg=4, dt=0, n=None, ax=None):
+        if ax is None:
+            fig,ax = plt.subplots(1)
+        resps = self.emgdct[emg][ch1][ch2][dt]['data']
+        if n:
+            resps = np.array(random.choices(resps, k=n))
+        ax.plot(resps.T)
+        ax.set_title('emg={}, dt={}, ch1={}, ch2={}'.format(emg,dt,ch1,ch2))
+
+    def plot_ch2emg_resps(self, chs=None, n=None, avgResp=True, ylim=0.025, lw_avg=3, emgs=[0,1,2,4,5,6,(0,4,40),(4,0,40)], stimLine=True):
+        if chs is None:
+            chs = self.chs; n_ch = self.n_ch
+        else:
+            n_ch = len(chs)
+        fig,axes = plt.subplots(n_ch, len(emgs), sharex=True, sharey=True)
+        axes[0][0].set_ylim(0,ylim) #note this will change all axes
+        for i,ch in enumerate(chs):
+            for j,emg in enumerate(emgs):
+                if not hasattr(emg, "__iter__"):
+                    resps = self.emgdct[emg][ch][ch][0]['data']
+                else: #synergy
+                    emg1,emg2,tau = emg
+                    resps = self.synergy(emg1,emg2,dt=0, tau=tau, ch1=ch, ch2=ch)
+                if avgResp:
+                    avgresp = resps.mean(axis=0)
+                if n:
+                    resps = np.array(random.choices(resps, k=n))
+                axes[i][j].plot(resps.T)
+                if avgResp:
+                    axes[i][j].plot(avgresp, color='k', linewidth=lw_avg, label='avg resp')
+                if stimLine:
+                    lenresps = resps.shape[1]
+                    axes[i][j].axvline(lenresps/2, color='r')
+        #add labels
+        for i,ch in enumerate(chs):
+            axes[i][0].set_ylabel('ch {}'.format(ch))
+        for j,emg in enumerate(emgs):
+            axes[-1][j].set_xlabel('emg {}'.format(emg))
+        #add title
+        if avgResp:
+            fig.suptitle("Showing avg emg resps for each ch")
+        elif n:
+            fig.suptitle("Showing {} rnd emg resps for each ch".format(n))
+        else:
+            fig.suptitle("Showing emg resps for each ch")
+        axes[0][0].legend()
+
+    def plot_chs2emg_resps(self, chs1=13, chs2=[], dts=0, emgs=[0,1,2,4,5,6,(0,4,40),(4,0,40)], n=None, avgResp=True, ylim=0.025, stimLine=True):
+        # emg can be either an emg or a synergy
+        if not hasattr(chs1, "__iter__"): chs1=[chs1]
+        if not hasattr(chs2, "__iter__"): chs2=[chs2]
+        if not hasattr(dts, "__iter__"): dts=[dts];
+        if chs1==[]: chs1=self.chs
+        if chs2==[]: chs2=self.chs
+        if dts==[]: dts=self.dts
+        if len(chs1)!= 1 or len(chs2) != 1:
+            assert len(dts)==1
+        # what variable to loop y axis on
+        if len(dts)==1:
+            fig,axes = plt.subplots(len(chs1)*len(chs2), len(emgs), sharex=True, sharey=True)
+            fig.suptitle("Showing emg resps for dt={}".format(dts[0]))
+            axes[0][0].set_ylim(0,ylim)
+            for i,(ch1,ch2) in enumerate(itertools.product(chs1,chs2)):
+                for j,emg in enumerate(emgs):
+                    if not hasattr(emg, "__iter__"):
+                        resps = self.emgdct[emg][ch1][ch2][dts[0]]['data']
+                    else: #synergy
+                        emg1,emg2,tau = emg
+                        resps = self.synergy(emg1,emg2,dt=dts[0], tau=tau, ch1=ch1, ch2=ch2)
+                    lenresps = resps.shape[1]
+                    if avgResp:
+                        avgresp = resps.mean(axis=0)
+                    if n:
+                        resps = np.array(random.choices(resps, k=n))
+                    axes[i][j].plot(resps.T)
+                    if avgResp:
+                        axes[i][j].plot(avgresp, color='k', linewidth=3, label='avg resp')
+                    if stimLine:
+                        axes[i][j].axvline(lenresps/2, color='r')
+                        axes[i][j].axvline(lenresps/2 + dts[0]/300*lenresps, color='r')
+                axes[i][0].set_ylabel('chs1={}, ch2={}'.format(ch1,ch2))
+        else:
+            # chs1 and ch2 are fixed, we vary dt
+            fig,axes = plt.subplots(len(dts), len(emgs), sharex=True, sharey=True)
+            fig.suptitle("Showing emg resps for ch1={}, ch2={}".format(chs1[0],chs2[0]))
+            axes[0][0].set_ylim(0,ylim)
+            for i,dt in enumerate(dts):
+                for j,emg in enumerate(emgs):
+                    if not hasattr(emg, "__iter__"):
+                        resps = self.emgdct[emg][chs1[0]][chs2[0]][dt]['data']
+                    else: #synergy
+                        emg1,emg2,tau = emg
+                        resps = self.synergy(emg1,emg2,dt=dt, tau=tau, ch1=chs1[0], ch2=chs2[0])
+                    lenresps = resps.shape[1]
+                    if avgResp:
+                        avgresp = resps.mean(axis=0)
+                    if n:
+                        resps = np.array(random.choices(resps, k=n))
+                    axes[i][j].plot(resps.T)
+                    if avgResp:
+                        axes[i][j].plot(avgresp, color='k', linewidth=3, label='avg resp')
+                    if stimLine:
+                        axes[i][j].axvline(lenresps/2, color='r')
+                        axes[i][j].axvline(lenresps/2 + dt/300*lenresps, color='r')
+                axes[i][0].set_ylabel('dt={}'.format(dt))
+                
+        for j,emg in enumerate(emgs):
+            axes[-1][j].set_xlabel('emg {}'.format(emg))
+        axes[0][0].legend()
+
     def plot_single_means(self):
-        # Plot single pulse response means
-        # means = self.build_1d_prior()
-        # stds = self.build_1d_prior(f='stdmax')
-        # plt.errorbar(list(range(len(means))),means,stds, linestyle='None', marker='.')
         plt.figure()
         plt.suptitle("Means of maxs for 1d responses")
 
@@ -234,7 +288,16 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
         ax = plt.subplot(1,1,1,projection='3d')
         surf = ax.bar3d(x,y,np.zeros_like(z),1,1,z)
 
-    def plot_single_responses(self):
+    def plot_all_pair_responses(self, emg=2, dt=0, n=None):
+        fig, axes = plt.subplots(self.n_ch, self.n_ch, sharex=True, sharey=True)
+        for i,ch1 in enumerate(self.chs):
+            for j,ch2 in enumerate(self.chs):
+                resps = self.emgdct[emg][ch1][ch2][dt]['data']
+                if n:
+                    resps = np.array(random.choices(resps, k=n))
+                axes[i][j].plot(resps.T)
+
+    def plot_all_single_responses(self):
         # Plot single channel responses (why is ch 17 the biggest by far?)
         fig = plt.figure()
         fig.suptitle("Responses for all combinations of EMG and channels in 1d")
@@ -254,8 +317,9 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
 
     def plot_response_matrix(self, emg=2, dt=40):
         fig = plt.figure()
-        plt.suptitle("Matrix of responses for EMG {} with dt={}".format(emg, dt))
+        plt.suptitle("Matrix of responses for EMG {} with dt={} (1stch left, 2ndch top)".format(emg, dt))
         gs = gridspec.GridSpec(12,12)
+        # We first plot the 1d responses on left and top
         for i,ch in enumerate(self.chs):
             ax = plt.subplot(gs[0,i+2])
             ax.set_ylim([0,0.05])
@@ -272,6 +336,8 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
             ax.set_ylabel(ch)
             ax.plot(self.emgdct[emg][ch][ch][0]['data'].T)
 
+        maxch1,maxch2 = self.max_ch_2d(emg=emg,dt=dt)
+        maxr = self.emgdct[emg][maxch1][maxch2][dt]['meanmax']
         for i,ch1 in enumerate(self.chs):
             for j,ch2 in enumerate(self.chs):
                 ax = plt.subplot(gs[i+2,j+2])
@@ -279,29 +345,20 @@ We call it 1d to contrast with 2d trains (2 channels simulated at the same time)
                 ax.set_xticks([])
                 ax.set_yticks([])
                 bbox = None
-                if ch1!=ch2:
-                    plt.plot(self.emgdct[emg][ch1][ch2][dt]['data'].T)
-                    mm = self.emgdct[emg][ch1][ch2][dt]['meanmax']
-                    if mm > 0.01:
-                        bbox = dict(facecolor='red', alpha=0.5)
-                    plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
-                else:
-                    plt.plot(self.emgdct[emg][ch1][ch1][dt]['data'].T)
-                    mm = self.emgdct[emg][ch1][ch1][dt]['meanmax']
-                    if mm > 0.01:
-                        bbox = dict(facecolor='red', alpha=0.5)
-                    plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
+                plt.plot(self.emgdct[emg][ch1][ch2][dt]['data'].T)
+                mm = self.emgdct[emg][ch1][ch2][dt]['meanmax']
+                if ch1==maxch1 and ch2==maxch2:
+                    bbox = dict(facecolor='green', alpha=0.5)
+                elif mm > maxr - 0.005:
+                    bbox = dict(facecolor='red', alpha=0.5)
+                plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
 
 if __name__ == "__main__":
-    # trainsC = Trains(emg=EMG)
-    # trainsC.build_f_grid_1d()
-    # print(trains.build_f_grid())
-    # print(trains.build_1d_prior())
-    # trains.plot_2d(dt=40, usestd=False)
-    # trains.plot_all_2d('meanmax', zmax=0.04, usestd=False)
-    # trains.plot_2d_priors()
-    # trains.plot_single_means()
-    # trains.plot_single_responses()
-    for dt in DTS:
-        trainsC.plot_response_matrix(emg=4, dt=dt)
+    trainsC = Trains(emg=EMG)
+    trainsC.synergy(0,4,13,13,dt=0)
+    # trainsC.plot_response_matrix()
+    # trainsC.plot_all_pair_responses(dt=40,n=5)
+    # trainsC.plot_ch2emg_resps(avgResp=True)
+    # trainsC.plot_chs2emg_resps(chs1=17,chs2=17,dts=[])
+    # trainsC.plot_chs2emg_resps(chs1=[13,17],chs2=[13,17],dts=40)
     plt.show()

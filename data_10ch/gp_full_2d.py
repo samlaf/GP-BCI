@@ -168,7 +168,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
         return m
     if prevmodel and prior1d:
         m = GPy.models.GPRegression(X,Y,kernel=prevmodel.sum.copy(), mean_function=prevmodel.mapping.copy())
-        m.Gaussian_noise.variance = prevmodel.Gaussian_noise.variance
+        m[:] = prevmodel[:]
     elif prevmodel:
         #There is a previous model but it doesn't use prior (so no
         #mean mapping)
@@ -296,15 +296,17 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
                         'dt{}'.format(dt), 'exp{}'.format(uid))
     if not path.isdir(exppath):
         os.makedirs(exppath)
-    n_ch=2
-    n_models=3
+    n_ch = 2 # pair of channel for 2d experiment
+    n_models = 3 if dtprior else 2
     # Build 1d model for modelsprior
-    X1d,Y1d = make_dataset_1d(trains)
+    X1d,Y1d = make_dataset_1d(trainsC, emg=emg)
+    X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
     # queriedchs contains <n_ch> queried channels for all <repeat> runs of <ntotal>
     # queries with <nrnd> initial random pts for each of <n_models> models
     queriedchs = np.zeros((n_models, repeat, len(nrnd), ntotal, n_ch))
     maxchs = np.zeros((n_models, repeat, len(nrnd), ntotal, n_ch))
+    vals = np.zeros((n_models, repeat, len(nrnd), ntotal, 100))
     for repeat in range(repeat):
         print("Repeat", repeat)
         for i,n1 in enumerate(nrnd):
@@ -315,22 +317,28 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
             modelsprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                              prior1d=m1d, dt=dt, emg=emg, dtprior=False)
-            modelsdtprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
-                                             num_restarts=1, continue_opt=continue_opt,
-                                               prior1d=m1d, dt=dt, emg=emg, dtprior=True)
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
-            queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
             for r,m in enumerate(models,n1-1):
                 maxchs[0][repeat][i][r] = get_maxchpair(m)
+                vals[0][repeat][i][r] = m.predict(X)[0].reshape((-1))
             for r,m in enumerate(modelsprior,n1-1):
                 maxchs[1][repeat][i][r] = get_maxchpair(m)
-            for r,m in enumerate(modelsdtprior,n1-1):
-                maxchs[2][repeat][i][r] = get_maxchpair(m)
+                vals[1][repeat][i][r] = m.predict(X)[0].reshape((-1))
+            if dtprior:
+                modelsdtprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
+                                             num_restarts=1, continue_opt=continue_opt,
+                                               prior1d=m1d, dt=dt, emg=emg, dtprior=True)
+                queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
+                for r,m in enumerate(modelsdtprior,n1-1):
+                    maxchs[2][repeat][i][r] = get_maxchpair(m)
+                    vals[2][repeat][i][r] = m.predict(X)[0].reshape((-1))
     dct = {
         'queriedchs': queriedchs,
         'maxchs': maxchs,
+        'vals': vals,
         'nrnd': nrnd,
+        'true_vals': trainsC.build_f_grid(emg=emg, dt=dt).flatten(),
         'ntotal': ntotal,
         'emg': emg,
         'dt': dt,
@@ -342,7 +350,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
     print("Saving stats dictionary to: {}".format(filename))
     with open(filename, 'wb') as f:
         pickle.dump(dct, f)
-    return queriedchs, maxchs
+    return dct
 
 def run_dist_exps(args):
     emgdtpath = path.join('exps', 'emg{}'.format(args.emg), 'dt{}'.format(args.dt))
@@ -432,23 +440,21 @@ if __name__ == "__main__":
     trainsC = Trains(emg=args.emg)
     trains = trainsC.get_emgdct(args.emg)
 
-    X1d,Y1d = make_dataset_1d(trains)
-    m1d, = train_models_1d(X1d,Y1d, ARD=False)
+    D = run_ch_stats_exps(trainsC, repeat=1, ntotal=40, nrnd=[10,30,10])
+    # todo:
+    # 0) load fulldatam (like in run_dist_exps) to save time and not
+    # have to train full model every time
+    # 1) plot graphs for this to make sure data structure is fine
+    # 2) rerun using full out args (repeat=25)
+    # 3) implement simulated annealing acq fct
+
+    # X1d,Y1d = make_dataset_1d(trains)
+    # m1d, = train_models_1d(X1d,Y1d, ARD=False)
     
-    # queriedchs, maxchs = run_ch_stats_exps(trains, args)
-    X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt, means=True)
-    # models = train_model_seq_2d(trainsC, 50, 100)
+    # # queriedchs, maxchs = run_ch_stats_exps(trains, args)
+    # X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt, means=True)
+    # models = train_model_seq_2d(trainsC, 50, 100, prior1d=m1d, dtprior=False)
     # m = models[-1]
-    # m, = train_models_2d(X,Y, dtprior=True)
-    p=build_prior(m1d, dtprior=True)
-    k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=False)
-    k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=False)
-    k = k1 + k2
-    m = GPy.models.GPRegression(X,Y,k, mean_function=p)
-    print(p)
-    print(p.mapping.mapping1.mapping1.mapping2)
-    m.optimize()
-    print(p)
-    print(p.mapping.mapping1.mapping1.mapping2)
+    # # m, = train_models_2d(X,Y, dtprior=True)
     
     plt.show()

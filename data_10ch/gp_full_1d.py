@@ -26,22 +26,23 @@ parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. b
 # there is no dt in 1d. But we need this to access the trains dct
 dt=0
 
-def make_dataset_1d(trains, mean=False, n=20):
+def make_dataset_1d(trainsC, emg=2, mean=False, n=20):
     # n means number of datapt per channel
     # Used to test/debug certain models
+    trains = trainsC.get_emgdct(emg=emg)
     X = []
     Y = []
     Xmean = []
     Ymean = []
     Yvars = []
     for ch in CHS:
-        ys = random.sample(trains[ch][ch][dt]['data'].max(axis=1).tolist(),n)
+        ys = random.sample(trains[ch][ch][0]['data'].max(axis=1).tolist(),n)
         Y.extend(ys)
-        var = trains[ch][ch][dt]['stdmax'] ** 2
+        var = trains[ch][ch][0]['stdmax'] ** 2
         Yvars.extend([var] * len(ys))
         xy = ch2xy[ch]
         X.extend([xy]*len(ys))
-        Ymean.append(trains[ch][ch][dt]['meanmax'])
+        Ymean.append(trains[ch][ch][0]['meanmax'])
         Xmean.extend([xy])
     if mean:
         Xmean = np.array(Xmean)
@@ -50,15 +51,6 @@ def make_dataset_1d(trains, mean=False, n=20):
     X = np.array(X)
     Y = np.array(Y).reshape((-1,1))
     return X,Y
-
-# Heteroskedastic model
-# Yvars = np.array(Yvars).reshape((-1,1))
-# matk = GPy.kern.Matern52(input_dim=2, ARD=True)
-# mhetefix = GPy.models.GPHeteroscedasticRegression(X,Y,matk)
-# # We use the real noise
-# mhetefix.het_Gauss.variance = Yvars
-# mhetefix.het_Gauss.fix()
-# mhetefix.optimize(messages=True,max_f_eval = 1000)
 
 def train_models_1d(X,Y, model_names=['homo'], num_restarts=5, ARD=True):
     if model_names == 'all':
@@ -77,6 +69,56 @@ def train_models_1d(X,Y, model_names=['homo'], num_restarts=5, ARD=True):
         models.append(mhomo)
 
     return models
+
+### We try the co-kriging (multi output GP) approach to learn all EMGS
+### at the same time
+def make_mo_dataset(trainsC, emgs=[0,1,2,4,5,6]):
+    X = []
+    Y = []
+    for emg in emgs:
+        trains = trainsC.get_emgdct(emg=emg)
+        for ch in CHS:
+            ys = trains[ch][ch][0]['maxs']
+            Y.extend(ys)
+            xy = ch2xy[ch]
+            xyemg = xy + [emg]
+            X.extend([xyemg]*len(ys))
+    X = np.array(X)
+    Y = np.array(Y).reshape((-1,1))
+    return X,Y
+
+def train_mo_model(X,Y, ARD=True, num_restarts=1):
+    #first make separable kernel
+    # kx = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
+    # ky = GPy.kern.Matern52(input_dim=1, active_dims=[2])
+    # k = kx + ky
+    k = GPy.kern.Matern52(input_dim=3, ARD=True)
+    
+    m = GPy.models.GPRegression(X,Y,k)
+    m.optimize_restarts(num_restarts=num_restarts)
+    return m
+
+def plot_mo_model(m, plot_data=True):
+    emgs = np.unique(m.X[:,2]).tolist()
+    fig, axes = plt.subplots(2,len(emgs),sharex=True,sharey=True)
+    fig.suptitle("Co-kriging model")
+    for j,emg in enumerate(emgs):
+        for i in [0,1]:
+            ax=axes[i][j]
+            m.plot(ax=ax, fixed_inputs=[(0,i), (2,emg)],
+                   plot_data=False, lower=17, upper=83,
+                   legend=False)
+        axes[0][j].set_title("emg {}".format(emg))
+    if plot_data:
+        t=1
+        norm = colors.Normalize(vmin=-50, vmax=len(m.X))
+        for (i,j,emg),y in zip(m.X, m.Y):
+            i,j = int(i), int(j)
+            k = emgs.index(emg)
+            axes[i][k].plot(j, y, 'x', color='C{}'.format(j))
+            t+=1
+
+##### end of co-kriging section ######
 
 def train_model_seq(trains, n_random_pts=10, n_total_pts=15, ARD=True, num_restarts=3, continue_opt=False, k=2):
     X = []
@@ -202,12 +244,11 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
     fig, axes = plt.subplots(2,1,
                              sharex=True,
                              sharey=True)
-    lengthscales = [m.Mat52.lengthscale[i] for i in range(len(m.Mat52.lengthscale))]
-    #fig.suptitle(("{}: ls="+" {:.2}
+    #lengthscales = [m.Mat52.lengthscale[i] for i in range(len(m.Mat52.lengthscale))]
+    fig.suptitle(title)
     #"*len(lengthscales)).format(title,*lengthscales))
-    if title:
-        title = 'Channels {}'.format(xy2ch[i])
     for i,ax in zip([0,1],axes):
+        title = 'Channels {}'.format(xy2ch[i])
         m.plot(ax=ax, fixed_inputs=[(0,i)],
                plot_data=False, title=title,
                lower=17, upper=83, legend=False)
@@ -272,12 +313,12 @@ def run_dist_exps(args):
     if not path.isdir(exppath):
         os.makedirs(exppath)
     trainsC = Trains(emg=args.emg)
-    trains = trainsC.trains
-
+    trains = trainsC.get_emgdct(emg=args.emg)
+    
     # We train all models with n rnd start pts and m sequential pts
     # And compare them to the model trained with all datapts
     # Then compute statistics and plot them
-    X,Y = make_dataset_1d(trains)
+    X,Y = make_dataset_1d(trainsC, emg=args.emg)
     mfull, = train_models_1d(X,Y, ARD=False)
     nrnd = range(5,50,5)
     nseq = range(0,50,5)
@@ -329,36 +370,59 @@ def get_maxch(m):
     maxch = get_ch(maxxy)
     return maxch
 
-def run_ch_stats_exps(trains, args, repeat=25, continue_opt=True, k=2):
-    exppath = path.join('exps', '1d', 'chruns', 'emg{}'.format(args.emg), 'exp{}'.format(args.uid))
+def run_ch_stats_exps(trainsC, emgs=[0,2,4], repeat=25, uid=None, continue_opt=True, k=2):
+    # here we run a bunch of runs, gather all statistics and save as
+    # npy array, to later plot in jupyter notebook
+    if uid is None:
+        uid = random.randrange(99999)
+    exppath = path.join('exps', '1d', 'chruns', 'exp{}'.format(uid))
+    print("Saving in path", exppath)
     if not path.isdir(exppath):
         os.makedirs(exppath)
     ntotal=100
     nrnd = range(5,76,10)
-    queriedchs = np.zeros((repeat, len(nrnd), ntotal))
-    maxchs = np.zeros((repeat, len(nrnd), ntotal))
-    for repeat in range(repeat):
-        print("Repeat", repeat)
-        for i,n1 in enumerate(nrnd):
-            print(n1)
-            models = train_model_seq(trains, n_random_pts=n1,
-                                     n_total_pts=ntotal, ARD=False,
-                                     continue_opt=continue_opt, num_restarts=1, k=k)
-            queriedchs[repeat][i] = [get_ch(xy) for xy in models[-1].X]
-            for r,m in enumerate(models,n1-1):
-                maxchs[repeat][i][r] = get_maxch(m)
-    dct = {
-        'queriedchs': queriedchs,
-        'maxchs': maxchs,
-        'nrnd': nrnd,
-        'ntotal': ntotal,
-        'true_ch': 17
-    }
+    dct = {}
+    for emg in emgs:
+        print("Starting emg {}".format(emg))
+        trains = trainsC.get_emgdct(emg)
+        queriedchs = np.zeros((repeat, len(nrnd), ntotal))
+        maxchs = np.zeros((repeat, len(nrnd), ntotal))
+        # we save all values the model predicted (for 10 chs)
+        # from this we can compute l2 and linf distances later
+        vals = np.zeros((repeat, len(nrnd), ntotal, 10))
+        # We first save the prediction of the full data model
+        X,Y = make_dataset_1d(trainsC, emg=emg)
+        fulldatam, = train_models_1d(X,Y)
+        X = np.array(list(itertools.product(range(2),range(5))))
+        fulldatam_vals = fulldatam.predict(X)[0]
+        for r in range(repeat):
+            print("Repeat", r)
+            for i,n1 in enumerate(nrnd):
+                print("nrnd: {}".format(n1))
+                models = train_model_seq(trains, n_random_pts=n1,
+                                         n_total_pts=ntotal, ARD=False,
+                                         continue_opt=continue_opt, num_restarts=1, k=k)
+                queriedchs[r][i] = [get_ch(xy) for xy in models[-1].X]
+                for midx,m in enumerate(models,n1-1):
+                    maxchs[r][i][midx] = get_maxch(m)
+                X = np.array(list(itertools.product(range(2),range(5))))
+                vals[r,i,n1-1:] = np.hstack([m.predict(X)[0] for m in models]).T
+        dct[emg] = {
+            'queriedchs': queriedchs,
+            'maxchs': maxchs,
+            'vals': vals,
+            'fulldatam_vals': fulldatam_vals,
+            'nrnd': nrnd,
+            'ntotal': ntotal,
+            'true_ch': get_maxch(fulldatam)
+        }
     with open(os.path.join(exppath, 'chruns_dct.pkl'), 'wb') as f:
         pickle.dump(dct, f)
-    return queriedchs, maxchs
+    return dct
 
 def run_seq_runs_exps(trainsC):
+    # can't remember what this is testing...
+    trains = trainsC.trains
     fig,ax = plt.subplots(1,1)
     n_total=60
     nrnd = range(10,n_total-10,10)
@@ -375,21 +439,18 @@ def run_seq_runs_exps(trainsC):
     plt.title("Runs with different number of random seed pts")
 
 if __name__ == '__main__':
-    # args = parser.parse_args()
-    # trainsC = Trains(emg=args.emg)
-    # trains = trainsC.trains
-    X,Y = make_dataset_1d(trains)
-    m1, = train_models_1d(X,Y)
-    m2, = train_models_1d(X,Y, ARD=False)
-    # plot_model_1d(m1, title="homoskedastic")
-    # plot_model_1d(m2, title="homoskedastic")
+    args = parser.parse_args()
+    trainsC = Trains(emg=args.emg)
+    # D = run_ch_stats_exps(trainsC, uid=2)
+
+    # # co-kriging model
+    # X,Y = make_mo_dataset(trainsC, emgs=[0,4])
+    # m = train_mo_model(X,Y, ARD=False)
+    # plot_mo_model(m)
     # plt.show()
 
-    # test seq model
-    n_rnd = 45
-    n_total=90
-    models = train_model_seq(trains, n_random_pts=n_rnd, n_total_pts=n_total, ARD=False, k=2)
-    # plot_seq_stats(models[-1], n_random_pts=n_rnd, trainsC=trainsC, plot_acq=True, plot_gp=False)
-    
-    plt.show()
-
+    # # compare with independent (per-emg) models
+    for emg in [4]:
+        X,Y = make_dataset_1d(trainsC, emg=emg)
+        m1, = train_models_1d(X,Y)
+        plot_model_1d(m1, title="emg={}".format(emg))
