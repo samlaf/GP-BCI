@@ -187,7 +187,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False):
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False, T=0.001):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
@@ -219,7 +219,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1,
         m.optimize_restarts(num_restarts=num_restarts)
     models.append(m)
     for _ in range(n_total_pts-n_random_pts):
-        nextx = get_next_x(m, sa=sa)
+        nextx = get_next_x(m, sa=sa, T=T)
         X.append(nextx)
         ch1 = xy2ch[nextx[0]][nextx[1]]
         ch2 = xy2ch[nextx[2]][nextx[3]]
@@ -249,14 +249,14 @@ def softmax(x, T=0.001):
     e = np.exp(x/T)
     return e/sum(e)
 
-def get_next_x(m, k=2, sa=False):
+def get_next_x(m, k=2, sa=False, T=0.001):
     X,acq = get_acq_map(m,k)
     if sa:
         # SA is for simulated annealing (sample instead of taking max)
         # For now we just normalize (since all >0). We could try
         # softmax instead
         normalize = acq.flatten()/sum(acq)
-        sm = softmax(acq).flatten()
+        sm = softmax(acq, T=T).flatten()
         nextidx = np.random.choice(range(len(acq)), p=sm)
     else:
         nextidx = acq.argmax()
@@ -575,11 +575,11 @@ if __name__ == "__main__":
     #     for m in ms:
     #         plot_model_2d(m)
             
-    X,Y = make_dataset_2d(trainsC, emg=4, dt=0)
-    # msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d)
+    X,Y = make_dataset_2d(trainsC, emg=4, dt=10, means=True)
+    msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d)
 
-    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=False, ARD=True, multkern=True)
-    mdctsa = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=True, ARD=True, multkern=True)
+    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=10, prior1d=m1d, symkern=True, sa=False, ARD=True, multkern=True)
+    mdctsa = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=10, prior1d=m1d, symkern=True, sa=True, ARD=True, multkern=True)
 
     plot_model_2d(mdct, plot_acq=True)
     plot_model_2d(mdctsa, plot_acq=True)
