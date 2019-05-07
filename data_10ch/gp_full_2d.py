@@ -187,7 +187,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, mult=False):
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
@@ -391,13 +391,13 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, mult=False, symkern=False, ARD=False):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa))
+    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     n_ch = 2 # pair of channel for 2d experiment
@@ -417,11 +417,11 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
             print(n1, "random init pts")
             modelsD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                          num_restarts=1, continue_opt=continue_opt, ARD=ARD,
-                                        dt=dt, emg=emg, sa=sa, mult=mult, symkern=symkern)
+                                        dt=dt, emg=emg, sa=sa, multkern=multkern, symkern=symkern)
             modelspriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                              prior1d=m1d, dt=dt, emg=emg, dtprior=False,
-                                              sa=sa, mult=mult, symkern=symkern, ARD=ARD)
+                                              sa=sa, multkern=multkern, symkern=symkern, ARD=ARD)
             models = modelsD['models']
             modelsprior = modelspriorD['models']
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
@@ -436,7 +436,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
                 modelsdtpriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                                    prior1d=m1d, dt=dt, emg=emg, dtprior=True,
-                                                    sa=sa, mult=mult, symkern=symkern, ARD=ARD)
+                                                    sa=sa, multkern=multkern, symkern=symkern, ARD=ARD)
                 modelsdtprior = modelsdtpriorD['models']
                 queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
                 for r,m in enumerate(modelsdtprior,n1-1):
@@ -454,7 +454,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
         'uid': uid,
         'repeat': repeat,
         'true_chpair': trainsC.max_ch_2d(emg,dt),
-        'mult': mult,
+        'multkern': multkern,
         'symkern': symkern
     }
     filename = os.path.join(exppath, 'chruns2d_dct.pkl')
@@ -558,7 +558,7 @@ if __name__ == "__main__":
     #      run_ch_stats_exps AND train_model_seq_2d
 
     D = run_ch_stats_exps(trainsC, emg=4, dt=0, uid=9306, repeat=2, ntotal=100,
-                          nrnd=[30,51,10], sa=True, mult=True, symkern=True, ARD=True)
+                          nrnd=[30,51,10], sa=True, multkern=True, symkern=True, ARD=True)
 
     emg=4
     X1d,Y1d = make_dataset_1d(trainsC, emg=4)
@@ -578,8 +578,8 @@ if __name__ == "__main__":
     X,Y = make_dataset_2d(trainsC, emg=4, dt=0)
     # msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d)
 
-    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=False, ARD=True, mult=True)
-    mdctsa = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=True, ARD=True, mult=True)
+    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=False, ARD=True, multkern=True)
+    mdctsa = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=True, ARD=True, multkern=True)
 
     plot_model_2d(mdct, plot_acq=True)
     plot_model_2d(mdctsa, plot_acq=True)
