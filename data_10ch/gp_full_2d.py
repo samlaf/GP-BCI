@@ -23,7 +23,9 @@ parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. b
 dt=0
 emg=2
 
-def make_dataset_2d(trainsC, emg=emg, dt=dt, means=False, n=None):
+def make_dataset_2d(trainsC, emg=emg, syn=None, dt=dt, means=False, n=None):
+    if syn is not None:
+        assert type(syn) is tuple, "syn should be a tuple of 2 emgs. (eg. (0,4))"
     trains = trainsC.get_emgdct(emg)
     X = []
     Y = []
@@ -40,13 +42,17 @@ def make_dataset_2d(trainsC, emg=emg, dt=dt, means=False, n=None):
             # don't include them for now (this is prob bad though)
             # train time: 4000 pts = 10 mins
             #             2000 pts = 2 mins
-            ys = trains[ch1][ch2][dt]['data'].max(axis=1)
+            if syn:
+                emg1,emg2 = syn
+                ys = trainsC.synergy(emg1,emg2,ch1,ch2,dt).max(axis=1)
+            else:
+                ys = trains[ch1][ch2][dt]['data'].max(axis=1)
             if n:
                 ys = random.sample(trains[ch1][ch2][dt]['data'].max(axis=1).tolist(),n)
             Y.extend(ys)
             X.extend([xych1 + xych2]*len(ys))
             # we also make a small dataset with means
-            Ymean.append(trains[ch1][ch2][dt]['meanmax'])
+            Ymean.append(ys.mean())
             Xmean.extend([xych1 + xych2])
     if means:
         Xmean = np.array(Xmean)
@@ -116,40 +122,37 @@ def build_prior(m1d, dtprior=False):
                                    GPy.mappings.Compound(mfsub, GPy.mappings.Linear(1,1)))
     return mf
 
-def train_models_2d(X,Y, models=['add'], num_restarts=1, prior1d=None, optimize=True, ARD=False, dtprior=False):
-    kernels = []
+def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1d=None, optimize=True, ARD=False, dtprior=False):
     # Additive kernel
-    if 'add' in models:
+    if kerneltype == 'add':
         k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
         k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=ARD)
         k = k1 + k2
-        kernels.append(k)
-
-    # Symmetric SE
-    if 'sym' in models:
-        matk = GPy.kern.Matern52(input_dim=4, ARD=ARD)
-        symM = np.block([[np.zeros((2,2)),np.eye(2)],[np.eye(2),np.zeros((2,2))]])
-        symk = GPy.kern.Symmetric(matk, symM)
-        kernels.append(symk)
-
-    # Full SE
-    if 'ard' in models:
-       matk = GPy.kern.Matern52(input_dim=4, ARD=ARD)
-       kernels.append(matk)
-
-    models = []
-    for k in kernels:
         if prior1d:
-            m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, dtprior=dtprior))
-            m.sum.Mat52.lengthscale = m.sum.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
-            m.sum.Mat52.variance = m.sum.Mat52_1.variance = prior1d.Mat52.variance
-            m.Gaussian_noise.variance = prior1d.Gaussian_noise.variance
-        else:
-            m = GPy.models.GPRegression(X,Y,k)
-        if optimize:
-            m.optimize_restarts(num_restarts=num_restarts)
-        models.append(m)
-    return models
+            k.Mat52.lengthscale = k.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
+            k.Mat52.variance = k.Mat52_1.variance = prior1d.Mat52.variance
+    # Full SE
+    elif kerneltype == 'mult':
+       k = GPy.kern.Matern52(input_dim=4, ARD=ARD)
+       if prior1d:
+           k.lengthscale = prior1d.Mat52.lengthscale
+           k.variance = prior1d.Mat52.variance
+    else:
+        raise Exception("kerneltype should be add or mult")
+    # Symmetric SE
+    if symkern:
+        symM = np.block([[np.zeros((2,2)),np.eye(2)],[np.eye(2),np.zeros((2,2))]])
+        k = GPy.kern.Symmetric(k, symM)
+
+    if prior1d:
+        m = GPy.models.GPRegression(X,Y,k, mean_function= build_prior(prior1d, dtprior=dtprior))
+        m.Gaussian_noise.variance = prior1d.Gaussian_noise.variance
+    else:
+        m = GPy.models.GPRegression(X,Y,k)
+    if optimize:
+        m.optimize_restarts(num_restarts=num_restarts)
+
+    return m
 
 def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
     k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
@@ -184,7 +187,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, dt=dt, dtprior=False, sa=True):
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, mult=False):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
@@ -195,30 +198,52 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1,
         ch1 = random.choice(CHS)
         ch2 = random.choice(CHS)
         X.append(ch2xy[ch1] + ch2xy[ch2])
-        resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+        if syn is None:
+            resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+        else:
+            resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
         Y.append(resp)
     #We save every model after each query
     models = []
-    m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, dtprior=dtprior)
-    if fix:
-        # fix all kernel parameters and only optimize for mean (prior) mapping
-        m.sum.fix()
-        m.Gaussian_noise.fix()
-    m.optimize_restarts(num_restarts=num_restarts)
+
+    if symkern:
+        m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult',symkern=True)
+    elif multkern:
+        m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult')
+    else:
+        m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, dtprior=dtprior)
+        if fix:
+            # fix all kernel parameters and only optimize for mean (prior) mapping
+            m.sum.fix()
+            m.Gaussian_noise.fix()
+        m.optimize_restarts(num_restarts=num_restarts)
     models.append(m)
     for _ in range(n_total_pts-n_random_pts):
         nextx = get_next_x(m, sa=sa)
         X.append(nextx)
         ch1 = xy2ch[nextx[0]][nextx[1]]
         ch2 = xy2ch[nextx[2]][nextx[3]]
-        resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+        if syn is None:
+            resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+        else:
+            resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
         Y.append(resp)
-        m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, dtprior=dtprior)
-        # If continue optimize, we optimize params after every query
-        if continue_opt:
-            m.optimize_restarts(num_restarts=num_restarts)
+        if symkern:
+            m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult',symkern=True)
+        elif multkern:
+            m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult') 
+        else:
+            m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, dtprior=dtprior)
+            # If continue optimize, we optimize params after every query
+            if continue_opt:
+                m.optimize_restarts(num_restarts=num_restarts)
         models.append(m)
-    return models
+        dct = {
+            'models': models,
+            'nrnd': n_random_pts,
+            'ntotal': n_total_pts
+        }
+    return dct
 
 def softmax(x, T=0.001):
     e = np.exp(x/T)
@@ -250,18 +275,27 @@ def make_2d_grid():
     return np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
 
 # Code for generating plots
-def plot_model_2d(m, fulldatam=None, title="", plot_acq=True):
-    fig, axes = plt.subplots(4,5, sharex=True, sharey=True)
+def plot_model_2d(m, fulldatam=None, title="", plot_acq=False, plot_reverse=False):
+    if type(m) is dict:
+        nrnd = m['nrnd']; is_seq=True
+        m = m['models'][-1]
+    else: is_seq=False
+    if plot_reverse:
+        fig, axes = plt.subplots(9,5, sharex=True, sharey=True)
+    else:
+        fig, axes = plt.subplots(4,5, sharex=True, sharey=True)
     fig.suptitle(title)
     for i in [0,1]:
         for j in range(5):
             ch1 = xy2ch[i][j]
             title='ch1 = {}'.format(ch1)
             axes[2*i][j].set_title(title)
+            if plot_reverse:
+                title='ch2 = {}'.format(ch1)
+                axes[2*i+5][j].set_title(title)
             for x2i in [0,1]:
                 ax = axes[2*i+x2i][j]
                 m.plot(ax=ax, fixed_inputs=[(0,i),(1,j),(2,x2i)], plot_data=False, legend=False)
-                
                 # We also plot the max found
                 maxx = m.predict(make_2d_grid())[0].max()
                 x = np.arange(0,4,0.1)
@@ -269,10 +303,63 @@ def plot_model_2d(m, fulldatam=None, title="", plot_acq=True):
                 # And the mean of the full-data-gp, if present
                 if fulldatam:
                     fulldatam.plot_mean(ax=ax, fixed_inputs=[(0,i),(1,j),(2,x2i)], color='y')
+                if plot_reverse:
+                    ax2 = axes[2*i+x2i+5][j]
+                    m.plot(ax=ax2, fixed_inputs=[(0,i),(1,j),(2,x2i)], plot_data=False, legend=False)
+                    ax2.plot(x,np.ones(len(x))*maxx, c='r')
+    # We also plot the data
+    if is_seq:
+        for (x1i,x1j,x2i,x2j),y in zip(m.X[:nrnd], m.Y[:nrnd]):
+            x1i,x1j,x2i,x2j = int(x1i), int(x1j), int(x2i), int(x2j)
+            ax = axes[2*x1i+x2i][x1j]
+            ax.plot(x2j, y, 'x', color='k')
+        t=1
+        norm = colors.Normalize(vmin=0, vmax=len(m.X)-nrnd)
+        for (x1i,x1j,x2i,x2j),y in zip(m.X[nrnd:], m.Y[nrnd:]):
+            x1i,x1j,x2i,x2j = int(x1i), int(x1j), int(x2i), int(x2j)
+            ax = axes[2*x1i+x2i][x1j]
+            ax.plot(x2j, y, 'x', color=plt.cm.Reds(norm(t)))
+            t+=1
+    else:
+        for (x1i,x1j,x2i,x2j),y in zip(m.X, m.Y):
+            x1i,x1j,x2i,x2j = int(x1i), int(x1j), int(x2i), int(x2j)
+            ax = axes[2*x1i+x2i][x1j]
+            ax.plot(x2j, y, 'x', color='C{}'.format(x2j))
+            if plot_reverse:
+                x1i,x1j,x2i,x2j = int(x1i), int(x1j), int(x2i), int(x2j)
+                ax = axes[2*x2i+x1i+5][x2j]
+                ax.plot(x1j, y, 'x', color='C{}'.format(x1j))
+    if plot_acq:
+        plt.figure()
+        _,acq = get_acq_map(m)
+        sm = softmax(acq).reshape((10,10))
+        plt.imshow(sm)
+        plt.colorbar()
+
+def plot_model_2d_reverse(m, fulldatam=None, title="", plot_acq=False):
+    # same as plot_model_2d, except here we plot with ch2 in foreground
+    fig, axes = plt.subplots(4,5, sharex=True, sharey=True)
+    fig.suptitle(title)
+    for i in [0,1]:
+        for j in range(5):
+            ch2 = xy2ch[i][j]
+            title='ch2 = {}'.format(ch2)
+            axes[2*i][j].set_title(title)
+            for x2i in [0,1]:
+                ax = axes[2*i+x2i][j]
+                m.plot(ax=ax, fixed_inputs=[(2,i),(3,j),(0,x2i)], plot_data=False, legend=False)
+                
+                # We also plot the max found
+                maxx = m.predict(make_2d_grid())[0].max()
+                x = np.arange(0,4,0.1)
+                ax.plot(x,np.ones(len(x))*maxx, c='r')
+                # And the mean of the full-data-gp, if present
+                if fulldatam:
+                    fulldatam.plot_mean(ax=ax, fixed_inputs=[(2,i),(3,j),(0,x2i)], color='y')
     for (x1i,x1j,x2i,x2j),y in zip(m.X, m.Y):
         x1i,x1j,x2i,x2j = int(x1i), int(x1j), int(x2i), int(x2j)
-        ax = axes[2*x1i+x2i][x1j]
-        ax.plot(x2j, y, 'x', color='C{}'.format(x2j))
+        ax = axes[2*x2i+x1i][x2j]
+        ax.plot(x1j, y, 'x', color='C{}'.format(x1j))
     if plot_acq:
         plt.figure()
         _,acq = get_acq_map(m)
@@ -304,7 +391,7 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, mult=False, symkern=False, ARD=False):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
@@ -328,12 +415,15 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
         print("Repeat", repeat)
         for i,n1 in enumerate(nrnd):
             print(n1, "random init pts")
-            models = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
-                                        num_restarts=1, continue_opt=continue_opt,
-                                        dt=dt, emg=emg, sa=sa)
-            modelsprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
+            modelsD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
+                                         num_restarts=1, continue_opt=continue_opt, ARD=ARD,
+                                        dt=dt, emg=emg, sa=sa, mult=mult, symkern=symkern)
+            modelspriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                             prior1d=m1d, dt=dt, emg=emg, dtprior=False, sa=sa)
+                                             prior1d=m1d, dt=dt, emg=emg, dtprior=False,
+                                              sa=sa, mult=mult, symkern=symkern, ARD=ARD)
+            models = modelsD['models']
+            modelsprior = modelspriorD['models']
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
             queriedchs[1][repeat][i] = [get_ch_pair(xy) for xy in modelsprior[-1].X]
             for r,m in enumerate(models,n1-1):
@@ -343,9 +433,11 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
                 maxchs[1][repeat][i][r] = get_maxchpair(m)
                 vals[1][repeat][i][r] = m.predict(X)[0].reshape((-1))
             if dtprior:
-                modelsdtprior = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
+                modelsdtpriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
-                                                   prior1d=m1d, dt=dt, emg=emg, dtprior=True, sa=sa)
+                                                   prior1d=m1d, dt=dt, emg=emg, dtprior=True,
+                                                    sa=sa, mult=mult, symkern=symkern, ARD=ARD)
+                modelsdtprior = modelsdtpriorD['models']
                 queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
                 for r,m in enumerate(modelsdtprior,n1-1):
                     maxchs[2][repeat][i][r] = get_maxchpair(m)
@@ -361,7 +453,9 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
         'dt': dt,
         'uid': uid,
         'repeat': repeat,
-        'true_chpair': trainsC.max_ch_2d(emg,dt)
+        'true_chpair': trainsC.max_ch_2d(emg,dt),
+        'mult': mult,
+        'symkern': symkern
     }
     filename = os.path.join(exppath, 'chruns2d_dct.pkl')
     print("Saving stats dictionary to: {}".format(filename))
@@ -417,9 +511,12 @@ def run_dist_exps(args):
         for i,n1 in enumerate(nrnd):
             for j,n2 in enumerate(nseq):
                 print(n1,n2)
-                models = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, dt=args.dt)
-                modelsprior = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, dt=args.dt)
-                modelspriorfix = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, fix=True, dt=args.dt)
+                modelsD = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, dt=args.dt)
+                modelspriorD = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, dt=args.dt)
+                modelspriorfixD = train_model_seq_2d(trains,n_random_pts=n1, n_total_pts=n1+n2, prior1d=m1d, fix=True, dt=args.dt)
+                models = modelsD['models']
+                modelsprior = modelspriorD['models']
+                modelspriorfix = modelspriorD['models']
                 mnoprior, mprior, mpriorfix = models[-1], modelsprior[-1], modelspriorfix[-1]
                 for midx,m in enumerate([mnoprior, mprior, mpriorfix]):
                     l2 = l2dist(m, madd)
@@ -457,15 +554,37 @@ if __name__ == "__main__":
     trainsC = Trains(emg=args.emg)
     trains = trainsC.get_emgdct(args.emg)
 
-    D = run_ch_stats_exps(trainsC, repeat=1, ntotal=40, nrnd=[10,30,10], sa=True)
+    #TODO: make m1d (prior1d) work with synergy in
+    #      run_ch_stats_exps AND train_model_seq_2d
 
-    # X1d,Y1d = make_dataset_1d(trainsC)
-    # m1d, = train_models_1d(X1d,Y1d, ARD=False)
-    
-    # # queriedchs, maxchs = run_ch_stats_exps(trains, args)
-    # X,Y = make_dataset_2d(trainsC, emg=emg, dt=dt, means=True)
-    # models = train_model_seq_2d(trainsC, 50, 50, prior1d=m1d, dtprior=False)
+    D = run_ch_stats_exps(trainsC, emg=4, dt=0, uid=9306, repeat=2, ntotal=100,
+                          nrnd=[30,51,10], sa=True, mult=True, symkern=True, ARD=True)
+
+    emg=4
+    X1d,Y1d = make_dataset_1d(trainsC, emg=4)
+    m1d, = train_models_1d(X1d,Y1d, ARD=False)
+    m1dard = train_models_1d(X1d,Y1d, ARD=True)
+
+    # model_names = 'all'
+    # X,Y = make_dataset_2d(trainsC, emg=4, dt=10, means=True)
+    # models = train_models_2d(X,Y, models=model_names, ARD=False)
+    # modelsard = train_models_2d(X,Y, models=model_names, ARD=True)
+    # modelsprior = train_models_2d(X,Y, prior1d=m1d, models=model_names, ARD=False)
+    # modelspriorard = train_models_2d(X,Y, prior1d=m1d, models=model_names, ARD=True)
+    # for ms in [models,modelsard,modelsprior,modelspriorard]:
+    #     for m in ms:
+    #         plot_model_2d(m)
+            
+    X,Y = make_dataset_2d(trainsC, emg=4, dt=0)
+    # msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d)
+
+    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=False, ARD=True, mult=True)
+    mdctsa = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=True, ARD=True, mult=True)
+
+    plot_model_2d(mdct, plot_acq=True)
+    plot_model_2d(mdctsa, plot_acq=True)
+    # for m in models[-10:]:
+    #     plot_model_2d(m)
     # m = models[-1]
-    # m, = train_models_2d(X,Y, dtprior=True)
     
     plt.show()
