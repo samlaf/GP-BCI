@@ -310,7 +310,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'exp{}'.format(uid))
+    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     n_ch = 2 # pair of channel for 2d experiment

@@ -19,17 +19,18 @@ else
 fi
 if [ -z "$3" ]
 then
-  UID=$SLURM_JOBID
+    uid=$SLURM_JOBID
 else
-  UID=$3-$SLURM_JOBID
+    #UID=$3-$SLURM_JOBID
+    uid=$3
 fi
-if [ -z "$4" ]
+if [ $4 == "sa" ]
 then
-    DTPRIOR=""
+    SA="--sa"
 else
-    DTPRIOR="--dtprior"
+    SA=""
 fi
 
 source /network/home/laferris/.bashrc
 conda activate gp
-python chruns_2d.py --emg $EMG --dt $DT --uid $UID $DTPRIOR
+python chruns_2d.py --emg $EMG --dt $DT --uid $uid $SA
