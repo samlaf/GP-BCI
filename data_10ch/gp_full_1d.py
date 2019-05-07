@@ -453,4 +453,8 @@ if __name__ == '__main__':
     for emg in [4]:
         X,Y = make_dataset_1d(trainsC, emg=emg)
         m1, = train_models_1d(X,Y)
-        plot_model_1d(m1, title="emg={}".format(emg))
+        plot_model_1d(m1, title="emg={}. ard".format(emg))
+        m2, = train_models_1d(X,Y, ARD=False)
+        plot_model_1d(m2, title="emg={}. not ard".format(emg))
+    plt.show()
+    
