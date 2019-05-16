@@ -13,6 +13,9 @@ Currently dt=0 responses aren't symmetric
 (for eg trains.build_f_grid(dt=40)[:3,:3] is not symmetric)
 technically this should be symmetric, so best might be to combine
 [ch1,ch2] respones with those of [ch2,ch1] and average over these 40 responses for both
+
+# INFO #
+time series are 1466 ticks long, and they last 300ms
 """
 
 CHS = [13,17,21,18,22,2,6,10,14,9]
@@ -82,7 +85,10 @@ class Trains:
                     if i == j:
                         dct[ch1][ch1][0] = {'data': filtdata[emg,i,j,0]}
                     else:
-                        dct[ch1][ch2][0] = dct[ch2][ch1][0] = {'data': np.vstack((filtdata[emg,i,j,0], filtdata[emg,j,i,0]))}
+                        data = filtdata[emg,i,j,0]
+                        if data.size == 0:
+                            data = filtdata[emg,j,i,0]
+                        dct[ch1][ch2][0] = dct[ch2][ch1][0] = {'data': data}
                     ch = dct[ch1][ch2][0]['data']
                     maxs = ch.max(axis=1)
                     dct[ch1][ch2][0]['maxs'] = dct[ch2][ch1][0]['maxs'] = maxs
@@ -94,10 +100,11 @@ class Trains:
                         # We also precompute the meanmax and stdmax
                         # statistics
                         ch = dct[ch1][ch2][dt]['data']
-                        maxs = ch.max(axis=1)
-                        dct[ch1][ch2][dt]['maxs'] = maxs
-                        dct[ch1][ch2][dt]['meanmax'] = maxs.mean()
-                        dct[ch1][ch2][dt]['stdmax'] = maxs.std()
+                        if ch.size != 0:
+                            maxs = ch.max(axis=1)
+                            dct[ch1][ch2][dt]['maxs'] = maxs
+                            dct[ch1][ch2][dt]['meanmax'] = maxs.mean()
+                            dct[ch1][ch2][dt]['stdmax'] = maxs.std()
             self.emgdct[emg] = dct
             ## Note: trains[chi][chi][10] and [20] shouldn't have anything
             ## But they contain same as trains[chi][chi][0] for some reason.
@@ -117,7 +124,7 @@ class Trains:
             for j,ch2 in enumerate(self.chs):
                 #TODO: now with synergies we can only do f='meanmax'
                 #      maybe change this later if needed
-                z_grid[i][j] = self.synergy(*syn,ch1,ch2,dt).max(axis=1).mean()
+                z_grid[i][j] = self.synergy_meanmax(*syn,ch1,ch2,dt)
                 #self.emgdct[emg][ch1][ch2][dt][f]
         return z_grid
 
@@ -145,6 +152,13 @@ class Trains:
         resps2_shifted = np.zeros_like(resps2)
         resps2_shifted[:,:-dtidx] = resps2[:,dtidx:]
         return a*resps1 + b*resps2_shifted
+
+    def synergy_meanmax(self, emg1, emg2, ch1, ch2, dt=0, tau=40, a=1, b=1):
+        syn = self.synergy(emg1,emg2,ch1,ch2,dt,tau,a,b)
+        if syn.size == 0:
+            return 0
+        else:
+            return syn.max(axis=1).mean()
 
     def max_ch_2d(self, emg=2, dt=40, syn=None):
         if syn is None:
@@ -181,7 +195,8 @@ class Trains:
         resps = self.emgdct[emg][ch1][ch2][dt]['data']
         if n:
             resps = np.array(random.choices(resps, k=n))
-        ax.plot(resps.T)
+        if resps.size != 0:
+            axes[i][j].plot(resps.T)
         ax.set_title('emg={}, dt={}, ch1={}, ch2={}'.format(emg,dt,ch1,ch2))
 
     def plot_ch2emg_resps(self, chs=None, n=None, avgResp=True, ylim=0.025, lw_avg=3, emgs=[0,1,2,4,5,6,(0,4,40),(4,0,40)], stimLine=True):
@@ -202,7 +217,8 @@ class Trains:
                     avgresp = resps.mean(axis=0)
                 if n:
                     resps = np.array(random.choices(resps, k=n))
-                axes[i][j].plot(resps.T)
+                if resps.size != 0:
+                    axes[i][j].plot(resps.T)
                 if avgResp:
                     axes[i][j].plot(avgresp, color='k', linewidth=lw_avg, label='avg resp')
                 if stimLine:
@@ -249,7 +265,8 @@ class Trains:
                         avgresp = resps.mean(axis=0)
                     if n:
                         resps = np.array(random.choices(resps, k=n))
-                    axes[i][j].plot(resps.T)
+                    if resps.size != 0:
+                        axes[i][j].plot(resps.T)
                     if avgResp:
                         axes[i][j].plot(avgresp, color='k', linewidth=3, label='avg resp')
                     if stimLine:
@@ -273,7 +290,8 @@ class Trains:
                         avgresp = resps.mean(axis=0)
                     if n:
                         resps = np.array(random.choices(resps, k=n))
-                    axes[i][j].plot(resps.T)
+                    if resps.size != 0:
+                        axes[i][j].plot(resps.T)
                     if avgResp:
                         axes[i][j].plot(avgresp, color='k', linewidth=3, label='avg resp')
                     if stimLine:
@@ -305,7 +323,8 @@ class Trains:
                 resps = self.emgdct[emg][ch1][ch2][dt]['data']
                 if n:
                     resps = np.array(random.choices(resps, k=n))
-                axes[i][j].plot(resps.T)
+                if resps.size != 0:
+                    axes[i][j].plot(resps.T)
 
     def plot_all_single_responses(self):
         # Plot single channel responses (why is ch 17 the biggest by far?)
@@ -325,9 +344,12 @@ class Trains:
                 fig.add_subplot(ax)
 
 
-    def plot_response_matrix(self, emg=2, syn=None, dt=40):
+    def plot_response_matrix(self, emg=2, syn=None, dt=40, tau=40):
         if syn is None:
             syn = (emg, None)
+            emg1 = emg2 = emg
+        else:
+            emg1,emg2 = syn
         fig = plt.figure()
         plt.suptitle("Matrix of responses for EMG1={},EMG2={} with dt={} (1stch left, 2ndch top)".format(*syn, dt))
         gs = gridspec.GridSpec(12,12)
@@ -338,19 +360,20 @@ class Trains:
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_title(ch)
-            ax.plot(self.emgdct[emg][ch][ch][0]['data'].T)
-            ax.text(0,0,"{:.2}".format(self.emgdct[emg][ch][ch][0]['meanmax']))
+            ax.plot(self.emgdct[emg2][ch][ch][0]['data'].T)
+            ax.text(0,0,"{:.2}".format(self.emgdct[emg2][ch][ch][0]['meanmax']))
 
             ax = plt.subplot(gs[i+2,0])
             ax.set_ylim([0,0.05])
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_ylabel(ch)
-            ax.plot(self.emgdct[emg][ch][ch][0]['data'].T)
+            ax.plot(self.emgdct[emg1][ch][ch][0]['data'].T)
+            ax.text(0,0,"{:.2}".format(self.emgdct[emg1][ch][ch][0]['meanmax']))
 
         
         maxch1,maxch2 = self.max_ch_2d(syn=syn,dt=dt)
-        maxr = self.synergy(*syn,maxch1,maxch2,dt).max(axis=1).mean()
+        maxr = self.synergy_meanmax(*syn,maxch1,maxch2,dt,tau=tau)
         for i,ch1 in enumerate(self.chs):
             for j,ch2 in enumerate(self.chs):
                 ax = plt.subplot(gs[i+2,j+2])
@@ -358,9 +381,10 @@ class Trains:
                 ax.set_xticks([])
                 ax.set_yticks([])
                 bbox = None
-                data = self.synergy(*syn,ch1,ch2,dt)
-                plt.plot(data.T)
-                mm = data.max(axis=1).mean()
+                data = self.synergy(*syn,ch1,ch2,dt, tau=tau)
+                if data.size != 0:
+                    plt.plot(data.T)
+                mm = float(self.synergy_meanmax(*syn,ch1,ch2,dt,tau=tau))
                 if ch1==maxch1 and ch2==maxch2:
                     bbox = dict(facecolor='green', alpha=0.5)
                 elif mm > maxr - 0.005:
@@ -370,11 +394,15 @@ class Trains:
 if __name__ == "__main__":
     trainsC = Trains(emg=EMG)
     # trainsC.synergy(0,4,13,13,dt=0)
-    for dt in [0]:
-        trainsC.plot_response_matrix(emg=4, dt=dt)
-    trainsC.plot_response_matrix(syn=(0,4),dt=0)
+    for dt in [0,40,60,100]:
+        trainsC.plot_response_matrix(syn=(0,4), dt=dt)
+    # trainsC.plot_response_matrix(syn=(0,4),dt=40)
     # trainsC.plot_all_pair_responses(dt=40,n=5)
     # trainsC.plot_ch2emg_resps(avgResp=True)
     # trainsC.plot_chs2emg_resps(chs1=17,chs2=17,dts=[])
     # trainsC.plot_chs2emg_resps(chs1=[13,17],chs2=[13,17],dts=40)
+    #trainsC.plot_response_matrix(emg=0, dt=40)
+    #trainsC.plot_response_matrix(emg=4, dt=40)
     plt.show()
+
+
