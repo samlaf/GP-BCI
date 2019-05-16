@@ -56,6 +56,10 @@ for emg=1:N_EMGS
         for ch2=1:N_CHS
             for dt=1:N_DT
                 ts = raw_resp{emg,ch1,ch2,dt};
+                % This next critical line was missing originally...... huge bug
+                % not all ts are the same length (dt=0 are length 20,
+                % others are length 10), so we need to reset filtered.
+                filtered = []; gfiltered = [];
                 for stim = 1:size(ts,1)                  
                     ts(stim,:) = filtfilt(B,A,double(ts(stim,:)));
                     ts(stim,:) = filtfilt(B60,A60,double(ts(stim,:)));

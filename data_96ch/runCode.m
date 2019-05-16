@@ -81,9 +81,11 @@ for n_i=1:numel(NoiseEstim)
                 P_respo(q,:)=test_respo;
                 P_test(q,2)=test_respo;
                 [MapPrediction,VarianceMap,K_maj] = CalcPrediction(P_test,NoiseEstim(n_i),distKern,K_maj,NumElectrodes);
-                % Why use these 3 next lines instead of the commented
-                % below? We only test for gp predictions at electrodes that
-                % we had queried
+                % We only test for gp predictions at electrodes that
+                % we had queried (presumable we only want to return an
+                % electrode that we have already queried... though this is
+                % debatable. (so we comment the next line and replace with
+                % these 3)
                 Tested=unique(sort(P_test(:,1)));
                 MapPredictionTested=MapPrediction(Tested);
                 Good_Elec=Tested(find(ismember(MapPredictionTested, max(MapPredictionTested))));

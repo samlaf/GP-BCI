@@ -17,6 +17,7 @@ import os
 from os import path
 import itertools
 import pickle
+import operator
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--uid', type=int, default=2, help='uid for job number')
@@ -370,6 +371,14 @@ def get_maxch(m):
     maxch = get_ch(maxxy)
     return maxch
 
+def get_nmaxch(m, n=3):
+    X = np.array(list(itertools.product(range(2),range(5))))
+    means,_ = m.predict(X)
+    indexed = list(zip(X.tolist(), means.flatten()))
+    top_3 = sorted(indexed, key=operator.itemgetter(1))[-n:]
+    xys = list(reversed([xy for xy, v in top_3]))
+    return xys
+
 def run_ch_stats_exps(trainsC, emgs=[0,2,4], repeat=25, uid=None, continue_opt=True, k=2):
     # here we run a bunch of runs, gather all statistics and save as
     # npy array, to later plot in jupyter notebook
@@ -449,12 +458,9 @@ if __name__ == '__main__':
     # plot_mo_model(m)
     # plt.show()
 
-    # # compare with independent (per-emg) models
-    for emg in [4]:
+    for emg in [0,2,4]:
         X,Y = make_dataset_1d(trainsC, emg=emg)
         m1, = train_models_1d(X,Y)
         plot_model_1d(m1, title="emg={}. ard".format(emg))
-        m2, = train_models_1d(X,Y, ARD=False)
-        plot_model_1d(m2, title="emg={}. not ard".format(emg))
     plt.show()
     

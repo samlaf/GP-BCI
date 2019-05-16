@@ -122,7 +122,7 @@ def build_prior(m1d, dtprior=False):
                                    GPy.mappings.Compound(mfsub, GPy.mappings.Linear(1,1)))
     return mf
 
-def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1d=None, optimize=True, ARD=False, dtprior=False):
+def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1d=None, optimize=True, ARD=False, dtprior=False, constrain=False):
     # Additive kernel
     if kerneltype == 'add':
         k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
@@ -131,12 +131,22 @@ def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1
         if prior1d:
             k.Mat52.lengthscale = k.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
             k.Mat52.variance = k.Mat52_1.variance = prior1d.Mat52.variance
+        if constrain:
+            k.Mat52.lengthscale.constrain_bounded(1,2)
+            k.Mat52_1.lengthscale.constrain_bounded(1,2)
+            k.Mat52.variance.constrain_bounded(5e-4, 1e-3)
+            k.Mat52_1.variance.constrain_bounded(5e-4, 1e-3)
     # Full SE
     elif kerneltype == 'mult':
-       k = GPy.kern.Matern52(input_dim=4, ARD=ARD)
-       if prior1d:
-           k.lengthscale = prior1d.Mat52.lengthscale
-           k.variance = prior1d.Mat52.variance
+        k = GPy.kern.Matern52(input_dim=4, ARD=ARD)
+        if prior1d:
+            # We do these two differently in case prior1d has an ARD kernel
+            k.lengthscale[:2] = prior1d.Mat52.lengthscale
+            k.lengthscale[2:] = prior1d.Mat52.lengthscale
+            k.variance = prior1d.Mat52.variance
+        if constrain:
+            k.lengthscale.constrain_bounded(1,2)
+            k.variance.constrain_bounded(5e-4, 1e-3)
     else:
         raise Exception("kerneltype should be add or mult")
     # Symmetric SE
@@ -187,14 +197,31 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False, T=0.001):
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries=3, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False, T=0.001, constrain=True):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
         assert(prior1d is not None), "if dtprior is True, must give prior1d"
     X = []
     Y = []
-    for _ in range(n_random_pts):
+    if prior1d:
+        # query pts around n_prior_queries max chs of prior1d
+        nmaxchs = get_nmaxch(prior1d)
+        for xych1 in nmaxchs:
+            ch1 = xy2ch[xych1[0]][xych1[1]]
+            for xych2 in nmaxchs:
+                ch2 = xy2ch[xych2[0]][xych2[1]]
+                X.append(xych1+xych2)
+                if syn is None:
+                    resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+                else:
+                    resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
+                Y.append(resp)
+    else:
+        # we need this so as to query the right total # of pts
+        # (for loop below has - n_prior_queries**2)
+        n_prior_queries = 0
+    for _ in range(n_random_pts - n_prior_queries**2):
         ch1 = random.choice(CHS)
         ch2 = random.choice(CHS)
         X.append(ch2xy[ch1] + ch2xy[ch2])
@@ -207,14 +234,14 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1,
     models = []
 
     if symkern:
-        m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult',symkern=True)
+        m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult' if multkern else 'add',symkern=True, constrain=constrain)
     elif multkern:
-        m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult')
+        m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult', constrain=constrain)
     else:
         m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, dtprior=dtprior)
         if fix:
             # fix all kernel parameters and only optimize for mean (prior) mapping
-            m.sum.fix()
+            m.kern.fix()
             m.Gaussian_noise.fix()
         m.optimize_restarts(num_restarts=num_restarts)
     models.append(m)
@@ -229,20 +256,20 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, num_restarts=1,
             resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
         Y.append(resp)
         if symkern:
-            m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult',symkern=True)
+            m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult',symkern=True, constrain=constrain)
         elif multkern:
-            m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult') 
+            m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult', constrain=constrain)
         else:
             m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, dtprior=dtprior)
             # If continue optimize, we optimize params after every query
             if continue_opt:
                 m.optimize_restarts(num_restarts=num_restarts)
         models.append(m)
-        dct = {
-            'models': models,
-            'nrnd': n_random_pts,
-            'ntotal': n_total_pts
-        }
+    dct = {
+        'models': models,
+        'nrnd': n_random_pts,
+        'ntotal': n_total_pts
+    }
     return dct
 
 def softmax(x, T=0.001):
@@ -253,9 +280,6 @@ def get_next_x(m, k=2, sa=False, T=0.001):
     X,acq = get_acq_map(m,k)
     if sa:
         # SA is for simulated annealing (sample instead of taking max)
-        # For now we just normalize (since all >0). We could try
-        # softmax instead
-        normalize = acq.flatten()/sum(acq)
         sm = softmax(acq, T=T).flatten()
         nextidx = np.random.choice(range(len(acq)), p=sm)
     else:
@@ -275,10 +299,10 @@ def make_2d_grid():
     return np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
 
 # Code for generating plots
-def plot_model_2d(m, fulldatam=None, title="", plot_acq=False, plot_reverse=False):
+def plot_model_2d(m, k=-1, fulldatam=None, title="", plot_acq=False, plot_reverse=False):
     if type(m) is dict:
         nrnd = m['nrnd']; is_seq=True
-        m = m['models'][-1]
+        m = m['models'][k]
     else: is_seq=False
     if plot_reverse:
         fig, axes = plt.subplots(9,5, sharex=True, sharey=True)
@@ -391,7 +415,7 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
@@ -418,12 +442,12 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
             modelsD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                          num_restarts=1, continue_opt=continue_opt, ARD=ARD,
                                          dt=dt, emg=emg, sa=sa, multkern=multkern,
-                                         symkern=symkern, T=T)
+                                         symkern=symkern, T=T, constrain=constrain)
             modelspriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                              prior1d=m1d, dt=dt, emg=emg, dtprior=False,
                                               sa=sa, multkern=multkern, symkern=symkern,
-                                              ARD=ARD, T=T)
+                                              ARD=ARD, T=T, constrain=constrain)
             models = modelsD['models']
             modelsprior = modelspriorD['models']
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
@@ -561,12 +585,12 @@ if __name__ == "__main__":
     #      run_ch_stats_exps AND train_model_seq_2d
 
     D = run_ch_stats_exps(trainsC, emg=4, dt=0, uid=9306, repeat=2, ntotal=100,
-                          nrnd=[30,51,10], sa=True, multkern=True, symkern=True, ARD=True)
+                          nrnd=[30,51,10], sa=True, multkern=True, symkern=False, ARD=True)
 
     emg=4
     X1d,Y1d = make_dataset_1d(trainsC, emg=4)
     m1d, = train_models_1d(X1d,Y1d, ARD=False)
-    m1dard = train_models_1d(X1d,Y1d, ARD=True)
+    m1dard, = train_models_1d(X1d,Y1d, ARD=True)
 
     # model_names = 'all'
     # X,Y = make_dataset_2d(trainsC, emg=4, dt=10, means=True)
@@ -578,16 +602,20 @@ if __name__ == "__main__":
     #     for m in ms:
     #         plot_model_2d(m)
             
-    X,Y = make_dataset_2d(trainsC, emg=4, dt=10, means=True)
-    msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d)
+    X,Y = make_dataset_2d(trainsC, emg=4, dt=0)
+    msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d, constrain=False)
+    msymmultconstrain = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d, constrain=True)
 
-    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=10, prior1d=m1d, symkern=True, sa=False, ARD=True, multkern=True)
-    mdctsa = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=10, prior1d=m1d, symkern=True, sa=True, ARD=True, multkern=True)
+    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=None, symkern=True, sa=False, ARD=True, multkern=True, constrain=True)
+    mdctprior = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1dard, symkern=True, sa=False, ARD=True, multkern=True, constrain=True)
 
     plot_model_2d(mdct, plot_acq=True)
-    plot_model_2d(mdctsa, plot_acq=True)
-    # for m in models[-10:]:
-    #     plot_model_2d(m)
-    # m = models[-1]
-    
+    plot_model_2d(mdctprior, plot_acq=True)
+    print(get_maxchpair(mdct['models'][-1]))
+    print(get_maxchpair(mdctprior['models'][-1]))
+    print(mdct['models'][-1])
+    print(mdct['models'][-1].kern.Mat52.lengthscale)
+    print(mdctprior['models'][-1])
+    print(mdctprior['models'][-1].kern.Mat52.lengthscale)
     plt.show()
+        
