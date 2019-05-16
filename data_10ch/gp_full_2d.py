@@ -164,10 +164,15 @@ def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1
 
     return m
 
-def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False):
+def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False, constrain=True):
     k1 = GPy.kern.Matern52(input_dim=2, active_dims=[0,1], ARD=ARD)
     k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=ARD)
     k = k1 + k2
+    if constrain:
+            k.Mat52.lengthscale.constrain_bounded(1,2)
+            k.Mat52_1.lengthscale.constrain_bounded(1,2)
+            k.Mat52.variance.constrain_bounded(5e-4, 1e-3)
+            k.Mat52_1.variance.constrain_bounded(5e-4, 1e-3)
     if dtprior:
         # This is just a hack because dtprior prior is not
         # implemented properly. Somehow we can't .copy() it since its
@@ -238,7 +243,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
     elif multkern:
         m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult', constrain=constrain)
     else:
-        m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, dtprior=dtprior)
+        m = make_add_model(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, dtprior=dtprior, constrain=constrain)
         if fix:
             # fix all kernel parameters and only optimize for mean (prior) mapping
             m.kern.fix()
@@ -260,7 +265,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
         elif multkern:
             m = train_models_2d(np.array(X),np.array(Y)[:,None], prior1d=prior1d, ARD=ARD, kerneltype='mult', constrain=constrain)
         else:
-            m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, dtprior=dtprior)
+            m = make_add_model(np.array(X), np.array(Y)[:,None], prior1d=prior1d, prevmodel=models[-1], ARD=ARD, dtprior=dtprior, constrain=constrain)
             # If continue optimize, we optimize params after every query
             if continue_opt:
                 m.optimize_restarts(num_restarts=num_restarts)
