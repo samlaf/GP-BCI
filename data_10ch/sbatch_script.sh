@@ -7,11 +7,13 @@ uid=$1
 # done
 
 # false is just a keyword. we patternmatch for the -- only
-for symkern in '--symkern' 'false'; do
+for symkern in 'false'; do
     for multkern in '--multkern' 'false'; do
 	for ardkern in '--ardkern' 'false'; do
 	    for sa in '--sa' 'false'; do
-		sbatch chruns2d_emg4dt0_script.sh $symkern $multkern $ardkern $sa
+		for constrain in '--constrain' 'false'; do
+		    sbatch chruns2d_emgdt_script.sh $symkern $multkern $ardkern $sa $constrain
+		done
 	    done
 	done
     done
