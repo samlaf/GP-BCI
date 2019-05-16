@@ -218,7 +218,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
                 ch2 = xy2ch[xych2[0]][xych2[1]]
                 X.append(xych1+xych2)
                 if syn is None:
-                    resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+                    resp = random.choice(trainsC.get_resp(emg,dt,ch1,ch2).max(axis=1))
                 else:
                     resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
                 Y.append(resp)
@@ -231,7 +231,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
         ch2 = random.choice(CHS)
         X.append(ch2xy[ch1] + ch2xy[ch2])
         if syn is None:
-            resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+            resp = random.choice(trainsC.get_resp(emg,dt,ch1,ch2).max(axis=1))
         else:
             resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
         Y.append(resp)
@@ -256,7 +256,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
         ch1 = xy2ch[nextx[0]][nextx[1]]
         ch2 = xy2ch[nextx[2]][nextx[3]]
         if syn is None:
-            resp = random.choice(trains[ch1][ch2][dt]['data'].max(axis=1))
+            resp = random.choice(trainsC.get_resp(emg,dt,ch1,ch2).max(axis=1))
         else:
             resp = random.choice(trainsC.synergy(syn[0], syn[1], ch1, ch2, dt).max(axis=1))
         Y.append(resp)

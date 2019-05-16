@@ -136,6 +136,17 @@ class Trains:
             grid[x][y] = self.trains[ch][ch][0][f]
         return grid
 
+    def get_resp(self, emg, dt, ch1, ch2, filldiag=True):
+        if filldiag and (dt==10 or dt==20):
+            # dt=10 and dt=20 don't have a diagonal (can't have 40ms
+            # pulses with less than 40ms dt in between on same
+            # channel)
+            # but if we still want to try bayesopt, we can fill in
+            # diag with dt=0
+            return self.synergy(emg,emg,ch1,ch2,0,b=0)
+        else:
+            return self.synergy(emg,emg,ch1,ch2,dt,b=0)
+
     def synergy(self, emg1, emg2, ch1, ch2, dt=0, tau=40, a=1, b=1):
         # synergy is just a linear combination of emgs
         # We use these to define a new cost function (max synergy
