@@ -16,12 +16,12 @@ import copy
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--uid', type=str, default=1, help='uid for job number')
-parser.add_argument('--dt', type=int, default=0, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')
-parser.add_argument('--emg', type=int, default=2, choices=range(7), help='emg. between 0-6')
+parser.add_argument('--dt', type=int, default=40, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')
+parser.add_argument('--emg', type=int, default=4, choices=range(7), help='emg. between 0-6')
 
 # DEFAULT
-dt=0
-emg=2
+dt=40
+emg=4
 
 def make_dataset_2d(trainsC, emg=emg, syn=None, dt=dt, means=False, n=None):
     if syn is not None:
@@ -84,14 +84,14 @@ class Abs(GPy.core.Mapping):
             return -dL_dF
 
 
-def build_prior(m1d, dtprior=False):
-    f1 = GPy.core.Mapping(4,1)
+def build_prior(m1d, dtprior=False, input_dim=4):
+    f1 = GPy.core.Mapping(input_dim,1)
     def f_1(x):
         return m1d.predict(x[:,0:2])[0]
     f1.f = f_1
     f1.update_gradients = lambda a,b: None
     
-    f2 = GPy.core.Mapping(4,1)
+    f2 = GPy.core.Mapping(input_dim,1)
     def f_2(x):
         return m1d.predict(x[:,2:4])[0]
     f2.f = f_2
@@ -589,8 +589,8 @@ if __name__ == "__main__":
     #TODO: make m1d (prior1d) work with synergy in
     #      run_ch_stats_exps AND train_model_seq_2d
 
-    D = run_ch_stats_exps(trainsC, emg=4, dt=0, uid=9306, repeat=2, ntotal=100,
-                          nrnd=[30,51,10], sa=True, multkern=True, symkern=False, ARD=True)
+    D = run_ch_stats_exps(trainsC, emg=4, dt=60, uid=0, repeat=1, ntotal=100,
+                          nrnd=[90,100,10], sa=True, multkern=True, symkern=False, ARD=True)
 
     emg=4
     X1d,Y1d = make_dataset_1d(trainsC, emg=4)
@@ -607,12 +607,12 @@ if __name__ == "__main__":
     #     for m in ms:
     #         plot_model_2d(m)
             
-    X,Y = make_dataset_2d(trainsC, emg=4, dt=0)
-    msymmult = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d, constrain=False)
-    msymmultconstrain = train_models_2d(X,Y, kerneltype='mult', symkern=True, ARD=True, prior1d=m1d, constrain=True)
+    X,Y = make_dataset_2d(trainsC, emg=4, dt=60)
+    m = train_models_2d(X,Y, kerneltype='mult', ARD=True, prior1d=m1d, constrain=False)
+    mconstrain = train_models_2d(X,Y, kerneltype='mult', ARD=True, prior1d=m1d, constrain=True)
 
     mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=None, symkern=True, sa=False, ARD=True, multkern=True, constrain=True)
-    mdctprior = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1dard, symkern=True, sa=False, ARD=True, multkern=True, constrain=True)
+    mdctprior = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=60, prior1d=m1dard, symkern=False, sa=False, ARD=True, multkern=True, constrain=True)
 
     plot_model_2d(mdct, plot_acq=True)
     plot_model_2d(mdctprior, plot_acq=True)

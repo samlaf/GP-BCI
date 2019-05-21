@@ -45,7 +45,7 @@ N_EMGS = 7
 
 class Trains:
 
-    def __init__(self, emg = EMG, N_EMGS = N_EMGS, path_to_data=None):
+    def __init__(self, emg = EMG, N_EMGS = N_EMGS, path_to_data=None, clean_thresh=None):
         self.chs = CHS
         self.n_ch = len(self.chs)
         self.dts = DTS
@@ -106,10 +106,33 @@ class Trains:
                             dct[ch1][ch2][dt]['meanmax'] = maxs.mean()
                             dct[ch1][ch2][dt]['stdmax'] = maxs.std()
             self.emgdct[emg] = dct
-            ## Note: trains[chi][chi][10] and [20] shouldn't have anything
-            ## But they contain same as trains[chi][chi][0] for some reason.
-            ## Not super important for now but make sure not to take this as real data.
 
+        if clean_thresh:
+            # we remove all resps whose max is > clean_thresh
+            count=0
+            for emg in range(N_EMGS):
+                for ch1 in self.chs:
+                    for ch2 in self.chs:
+                        for dt in self.dts:
+                            if (dt==10 or dt==20) and ch1==ch2:
+                                continue
+                            maxs = self.emgdct[emg][ch1][ch2][dt]['maxs']
+                            i=0
+                            while i<len(maxs):
+                                if maxs[i] > clean_thresh:
+                                    print("Removing resp with max {}".format(maxs[i]))
+                                    print("emg {}, ch1 {}, ch2 {}, dt {}".format(emg,ch1,ch2,dt))
+                                    count+=1
+                                    for other_emg in range(N_EMGS):
+                                        data = self.emgdct[other_emg][ch1][ch2][dt]['data']
+                                        data = np.delete(data,i,0)
+                                        self.emgdct[other_emg][ch1][ch2][dt]['data'] = data
+                                        maxs = data.max(axis=1)
+                                        self.emgdct[other_emg][ch1][ch2][dt]['maxs']  = maxs
+                                        self.emgdct[other_emg][ch1][ch2][dt]['meanmax'] = maxs.mean()
+                                        self.emgdct[other_emg][ch1][ch2][dt]['stdmax'] = maxs.std()
+                                i+=1
+            print("Removed {} resps in total from dataset".format(count))
         self.trains = self.emgdct[emg]
 
     ######### GETTERS ############
@@ -207,7 +230,7 @@ class Trains:
         if n:
             resps = np.array(random.choices(resps, k=n))
         if resps.size != 0:
-            axes[i][j].plot(resps.T)
+            ax.plot(resps.T)
         ax.set_title('emg={}, dt={}, ch1={}, ch2={}'.format(emg,dt,ch1,ch2))
 
     def plot_ch2emg_resps(self, chs=None, n=None, avgResp=True, ylim=0.025, lw_avg=3, emgs=[0,1,2,4,5,6,(0,4,40),(4,0,40)], stimLine=True):
@@ -402,11 +425,37 @@ class Trains:
                     bbox = dict(facecolor='red', alpha=0.5)
                 plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
 
+    def plot_individual_resps(self,ch1,ch2,emg1=0,emg2=4,dt=60, ylim=None):
+        fig,axes = plt.subplots(2,5, sharex=True, sharey=True)
+        fig.suptitle('ch{}'.format(ch1) + 'ch{}'.format(ch2))
+        resps1=self.get_emgdct(emg1)[ch1][ch2][dt]['data']
+        resps2=self.get_emgdct(emg2)[ch1][ch2][dt]['data']
+        for i,ax in enumerate(axes.flatten()):
+            ax.plot(resps1[i], label='emg{}'.format(emg1))
+            ax.plot(resps2[i], label='emg{}'.format(emg2))
+            if ylim:
+                ax.set_ylim([0,ylim])
+            plt.legend()
+
+    def plot_max_val_stats(self):
+        vals = []
+        for emg in range(7):
+            for ch1 in self.chs:
+                for ch2 in self.chs:
+                    for dt in self.dts:
+                        if (dt==10 or dt==20) and ch1==ch2:
+                            continue
+                        vals.extend(trainsC.get_emgdct(emg)[ch1][ch2][dt]['maxs'].tolist())
+        plt.plot(vals, '.')
+
 if __name__ == "__main__":
-    trainsC = Trains(emg=EMG)
+    trainsCclean = Trains(emg=EMG, clean_thresh=0.05)
+    #trainsC = Trains(emg=EMG)
+    #trainsC.plot_max_val_stats()
+    #trainsC.plot_individual_resps(17,13)
     # trainsC.synergy(0,4,13,13,dt=0)
     for dt in [0,40,60,100]:
-        trainsC.plot_response_matrix(syn=(0,4), dt=dt)
+        trainsC.plot_response_matrix(emg=4, dt=dt)
     # trainsC.plot_response_matrix(syn=(0,4),dt=40)
     # trainsC.plot_all_pair_responses(dt=40,n=5)
     # trainsC.plot_ch2emg_resps(avgResp=True)
@@ -417,3 +466,4 @@ if __name__ == "__main__":
     plt.show()
 
 
+    
