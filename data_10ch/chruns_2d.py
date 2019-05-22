@@ -4,6 +4,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--uid', type=str, default='', help='alphanumerical uid for job number (default: '' will sample randint)')
+parser.add_argument('--jobid', type=str, default='', help='sbatch jobid. Used to ask info about job.')
 parser.add_argument('--emg', type=int, default=4, choices=range(7), help='emg. between 0-6')
 parser.add_argument('--repeat', type=int, default=25, help='Number of time to repeat loops (default: 25)')
 parser.add_argument('--dt', type=int, default=60, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')

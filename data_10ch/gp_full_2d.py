@@ -420,7 +420,7 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
@@ -429,6 +429,12 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', repeat=25, continue_opt=T
     exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD))
     if not path.isdir(exppath):
         os.makedirs(exppath)
+    if jobid:
+        # We save the name of the jobid in a file, so that if the
+        # experiment fails, we can ask sacct for info
+        filename = os.path.join(exppath, 'sbatchjobid={}'.format(jobid))
+        with open(filename, 'w') as f:
+            f.write('sbatcjobid = {}'.format(jobid))
     n_ch = 2 # pair of channel for 2d experiment
     n_models = 3 if dtprior else 2
     # Build 1d model for modelsprior

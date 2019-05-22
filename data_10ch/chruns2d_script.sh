@@ -7,13 +7,13 @@
 
 if [ -z "$1" ]
 then
-  EMG=2
+  EMG=4
 else
   EMG=$1
 fi
 if [ -z "$2" ]
 then
-  DT=2
+  DT=60
 else
   DT=$2
 fi
@@ -24,13 +24,8 @@ else
     #UID=$3-$SLURM_JOBID
     uid=$3
 fi
-if [ $4 == "sa" ]
-then
-    SA="--sa"
-else
-    SA=""
-fi
 
 source /network/home/laferris/.bashrc
 conda activate gp
-python chruns_2d.py --emg $EMG --dt $DT --uid $uid $SA
+# $4 should be a string of options
+python chruns_2d.py --emg $EMG --dt $DT --uid $uid --jobid $SLURM_JOBID $4
