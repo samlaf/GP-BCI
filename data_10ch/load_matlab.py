@@ -139,6 +139,20 @@ class Trains:
     def get_emgdct(self, emg):
         return self.emgdct[emg]
 
+    def build_f_grid_dt(self, emg=2, syn=None, dts=[40,60], f='meanmax'):
+        if syn is None:
+            syn = (emg, None)
+        z_grid = np.zeros((self.n_ch,self.n_ch,len(dts)))
+        for i,ch1 in enumerate(self.chs):
+            for j,ch2 in enumerate(self.chs):
+                for k,dt in enumerate(dts):
+                    #TODO: now with synergies we can only do f='meanmax'
+                    #      maybe change this later if needed
+                    z_grid[i][j][k] = self.synergy_meanmax(*syn,ch1,ch2,dt)
+                #self.emgdct[emg][ch1][ch2][dt][f]
+        return z_grid
+
+
     def build_f_grid(self, emg=2, syn=None, dt=40, f='meanmax'):
         if syn is None:
             syn = (emg, None)
@@ -160,17 +174,9 @@ class Trains:
         return grid
 
     def get_resp(self, emg, dt, ch1, ch2, filldiag=True):
-        if filldiag and (dt==10 or dt==20):
-            # dt=10 and dt=20 don't have a diagonal (can't have 40ms
-            # pulses with less than 40ms dt in between on same
-            # channel)
-            # but if we still want to try bayesopt, we can fill in
-            # diag with dt=0
-            return self.synergy(emg,emg,ch1,ch2,0,b=0)
-        else:
-            return self.synergy(emg,emg,ch1,ch2,dt,b=0)
+        return self.synergy(emg,emg,ch1,ch2,dt,b=0, filldiag=filldiag)
 
-    def synergy(self, emg1, emg2, ch1, ch2, dt=0, tau=40, a=1, b=1):
+    def synergy(self, emg1, emg2, ch1, ch2, dt=0, tau=40, a=1, b=1, filldiag=True):
         # synergy is just a linear combination of emgs
         # We use these to define a new cost function (max synergy
         # instead of max of a particular channel)
@@ -179,6 +185,10 @@ class Trains:
         if emg2 is None:
             emg2=0
             b=0
+        if filldiag and ch1==ch2 and (dt==10 or dt==20):
+            # We don't have values on the diag for dt=10 and dt=20,
+            # so we get them from dt=0 if filldiag is True
+            dt=0
         resps1 = self.emgdct[emg1][ch1][ch2][dt]['data']
         resps2 = self.emgdct[emg2][ch1][ch2][dt]['data']
         # resps are 1466 (resps1.shape[1]) ticks ts, which last 300ms
@@ -193,6 +203,13 @@ class Trains:
             return 0
         else:
             return syn.max(axis=1).mean()
+
+    def max_ch_dt2d(self, emg=4, dts=[40,60], syn=(0,4)):
+        if syn is None:
+            syn = (emg,None)
+        grid = self.build_f_grid_dt(syn=syn, dts=dts)
+        x,y,dtidx = np.unravel_index(grid.argmax(), grid.shape)
+        return [self.chs[x], self.chs[y], dts[dtidx]]
 
     def max_ch_2d(self, emg=2, dt=40, syn=None):
         if syn is None:
@@ -449,7 +466,7 @@ class Trains:
         plt.plot(vals, '.')
 
 if __name__ == "__main__":
-    trainsCclean = Trains(emg=EMG, clean_thresh=0.05)
+    trainsC = Trains(emg=EMG, clean_thresh=0.06)
     #trainsC = Trains(emg=EMG)
     #trainsC.plot_max_val_stats()
     #trainsC.plot_individual_resps(17,13)

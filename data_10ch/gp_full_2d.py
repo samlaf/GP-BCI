@@ -26,6 +26,8 @@ emg=4
 def make_dataset_2d(trainsC, emg=emg, syn=None, dt=dt, means=False, n=None):
     if syn is not None:
         assert type(syn) is tuple, "syn should be a tuple of 2 emgs. (eg. (0,4))"
+    else:
+        syn=(emg,None)
     trains = trainsC.get_emgdct(emg)
     X = []
     Y = []
@@ -42,11 +44,8 @@ def make_dataset_2d(trainsC, emg=emg, syn=None, dt=dt, means=False, n=None):
             # don't include them for now (this is prob bad though)
             # train time: 4000 pts = 10 mins
             #             2000 pts = 2 mins
-            if syn:
-                emg1,emg2 = syn
-                ys = trainsC.synergy(emg1,emg2,ch1,ch2,dt).max(axis=1)
-            else:
-                ys = trains[ch1][ch2][dt]['data'].max(axis=1)
+            emg1,emg2 = syn
+            ys = trainsC.synergy(emg1,emg2,ch1,ch2,dt).max(axis=1)
             if n:
                 ys = random.sample(trains[ch1][ch2][dt]['data'].max(axis=1).tolist(),n)
             Y.extend(ys)
@@ -84,16 +83,18 @@ class Abs(GPy.core.Mapping):
             return -dL_dF
 
 
-def build_prior(m1d, dtprior=False, input_dim=4):
+def build_prior(m1d1, m1d2=None, dtprior=False, input_dim=4):
+    if m1d2 is None:
+        m1d2 = m1d1
     f1 = GPy.core.Mapping(input_dim,1)
     def f_1(x):
-        return m1d.predict(x[:,0:2])[0]
+        return m1d1.predict(x[:,0:2])[0]
     f1.f = f_1
     f1.update_gradients = lambda a,b: None
     
     f2 = GPy.core.Mapping(input_dim,1)
     def f_2(x):
-        return m1d.predict(x[:,2:4])[0]
+        return m1d2.predict(x[:,2:4])[0]
     f2.f = f_2
     f2.update_gradients = lambda a,b: None
 
@@ -211,7 +212,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
     Y = []
     if prior1d:
         # query pts around n_prior_queries max chs of prior1d
-        nmaxchs = get_nmaxch(prior1d)
+        nmaxchs = get_nmaxch(prior1d, n=n_prior_queries)
         for xych1 in nmaxchs:
             ch1 = xy2ch[xych1[0]][xych1[1]]
             for xych2 in nmaxchs:
@@ -589,7 +590,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     dt = args.dt
     emg = args.emg
-    trainsC = Trains(emg=args.emg)
+    trainsC = Trains(emg=args.emg, clean_thresh=0.6)
     trains = trainsC.get_emgdct(args.emg)
 
     #TODO: make m1d (prior1d) work with synergy in
@@ -617,7 +618,7 @@ if __name__ == "__main__":
     m = train_models_2d(X,Y, kerneltype='mult', ARD=True, prior1d=m1d, constrain=False)
     mconstrain = train_models_2d(X,Y, kerneltype='mult', ARD=True, prior1d=m1d, constrain=True)
 
-    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=None, symkern=True, sa=False, ARD=True, multkern=True, constrain=True)
+    mdct = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=0, prior1d=m1d, symkern=True, sa=False, ARD=True, multkern=True, constrain=True)
     mdctprior = train_model_seq_2d(trainsC, 50, 100, emg=4, dt=60, prior1d=m1dard, symkern=False, sa=False, ARD=True, multkern=True, constrain=True)
 
     plot_model_2d(mdct, plot_acq=True)
