@@ -372,6 +372,8 @@ def get_maxch(m):
     return maxch
 
 def get_nmaxch(m, n=3):
+    if n==0:
+        return []
     X = np.array(list(itertools.product(range(2),range(5))))
     means,_ = m.predict(X)
     indexed = list(zip(X.tolist(), means.flatten()))
