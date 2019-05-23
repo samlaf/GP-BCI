@@ -5,12 +5,12 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--uid', type=str, default='', help='alphanumerical uid for job number (default: '' will sample randint)')
 parser.add_argument('--jobid', type=str, default='', help='sbatch jobid #')
-parser.add_argument('--syn', type=tuple, default=(0,4), help='syn. default=(0,4)')
+parser.add_argument('--syn', type=int, nargs='+', default=(0,4), help='syn. default=(0,4)')
 parser.add_argument('--repeat', type=int, default=25, help='Number of time to repeat loops (default: 25)')
-parser.add_argument('--dts', type=list, default=[40,60], help='dts. default=[40,60]')
+parser.add_argument('--dts', type=int, nargs='+', default=[40,60], help='dts. default=[40,60]')
 parser.add_argument('--dtprior', action='store_true')
 parser.add_argument('--ntotal', type=int, default=100, help='Total # of query pts to use (default=100)')
-parser.add_argument('--nrnd', type=int, nargs='+', default=[15,76,10], help='range of rnd query pts to try (default: [15,76,10]')
+parser.add_argument('--nrnd', type=int, nargs='+', default=[25,76,10], help='range of rnd query pts to try (default: [25,76,10]')
 parser.add_argument('--sa', action='store_true')
 parser.add_argument('--T', type=float, default=0.001, help='temperature for sa. (default=0.001)')
 parser.add_argument('--symkern', action='store_true')
@@ -36,8 +36,8 @@ if __name__ == "__main__":
         D = run_ch_stats_exps(trainsC, syn=args.syn, dts=args.dts, uid=args.uid, jobid=args.jobid, repeat=1, ntotal=50, nrnd=[25,45,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T, constrain=args.constrain)
     else:
         # Run the real things
-        D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid,
-                              repeat=args.repeat, dtprior=args.dtprior, ntotal=args.ntotal,
-                              nrnd=args.nrnd, sa=args.sa, symkern=args.symkern,
-                              multkern=args.multkern, ARD=args.ardkern, T=args.T,
-                              constrain=args.constrain)
+        D = run_ch_stats_exps(trainsC, syn=args.syn, dts=args.dts, uid=args.uid,
+                              jobid=args.jobid, repeat=args.repeat, dtprior=args.dtprior,
+                              ntotal=args.ntotal, nrnd=args.nrnd, sa=args.sa,
+                              symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern,
+                              T=args.T, constrain=args.constrain)

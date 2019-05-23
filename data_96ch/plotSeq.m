@@ -1,4 +1,4 @@
-function plotSeq(means, P_test, hypo, kappas)
+function plotSeq(queried, datameans , hypos, kappas)
 %PLOTSEQ 此处显示有关此函数的摘要
 %   此处显示详细说明
 
@@ -11,12 +11,12 @@ for i = 1:96
     [y,x] = find(xy2ch2==i);
     ch2xy(i,:) = [x,y];
 end
-queries = P_test(:,1);
+queries = queried(:,1);
 
 %f = figure;
 %ax = axes('Parent',f,'position',[0.13 0.39  0.77 0.54]);
 ax1 = subplot(2,2,1);
-h = imagesc(ax1,means(xy2ch));
+h = imagesc(ax1,datameans(xy2ch));
 colorbar
 title('real mean')
 
@@ -30,15 +30,17 @@ c.Callback = @selection;
         [y_,x_] = find(xy2ch == queries(idx));
         [y_next, x_next] = find(xy2ch == queries(idx+1));
         % Then plot the gp predictions
-        x = ch2xy(P_test(1:idx,1),:);
-        y = P_test(1:idx,2);
-        [ymu ys2 fmu fs2] = gp(hypo, @infGaussLik, @meanConst, @covSEard, @likGauss, x, y, ch2xy);
+        x = ch2xy(queried(1:idx,1),:);
+        y = queried(1:idx,2);
+        [ymu ys2 fmu fs2] = gp(hypos{idx}, @infGaussLik, [], {@covMaternard,5}, @likGauss, x, y, ch2xy);
+        disp(hypos{idx})
+        disp(exp(hypos{idx}.cov))
         kappa = kappas(idx);
         acqmap = ymu + kappa* sqrt(ys2);
         [acqmax, acqargmax] = max(acqmap);
         
         subplot(2,2,1);
-        h = imagesc(ax1,means(xy2ch));
+        h = imagesc(ax1,datameans(xy2ch));
         colorbar
         title('real mean')
         hold on;
