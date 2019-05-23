@@ -29,6 +29,7 @@ if __name__ == "__main__":
     print("ntotal: {}".format(args.ntotal))
     print("nrnd: {}".format(args.nrnd))
     print("Use simulated annealing: {}".format(args.sa))
+    print("Constrained: {}".format(args.constrain))
     trainsC = Trains()
     if args.test:
         # We just want to test the whole setup, so run with minimal

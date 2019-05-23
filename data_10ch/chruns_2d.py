@@ -18,6 +18,7 @@ parser.add_argument('--multkern', action='store_true')
 parser.add_argument('--ardkern', action='store_true')
 parser.add_argument('--test', action='store_true')
 parser.add_argument('--constrain', action='store_true')
+parser.add_argument('--n_prior_queries', type=int, default=3, help='number of initial queries driven by prior (instead of being random)')
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -33,11 +34,11 @@ if __name__ == "__main__":
     if args.test:
         # We just want to test the whole setup, so run with minimal
         # configs to end quickly
-        D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid, repeat=1, ntotal=50, nrnd=[15,35,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T)
+        D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid, repeat=1, ntotal=50, nrnd=[15,35,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T, jobid=args.jobid)
     else:
         # Run the real things
         D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid,
                               repeat=args.repeat, dtprior=args.dtprior, ntotal=args.ntotal,
                               nrnd=args.nrnd, sa=args.sa, symkern=args.symkern,
                               multkern=args.multkern, ARD=args.ardkern, T=args.T,
-                              constrain=args.constrain)
+                              constrain=args.constrain, jobid=args.jobid)

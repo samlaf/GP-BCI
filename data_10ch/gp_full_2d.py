@@ -421,13 +421,13 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True, n_prior_queries=3):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD))
+    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD), 'constrain{}'.format(constrain))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     if jobid:
@@ -454,12 +454,14 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, co
             modelsD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                          num_restarts=1, continue_opt=continue_opt, ARD=ARD,
                                          dt=dt, emg=emg, sa=sa, multkern=multkern,
-                                         symkern=symkern, T=T, constrain=constrain)
+                                         symkern=symkern, T=T, constrain=constrain,
+                                         n_prior_queries=n_prior_queries)
             modelspriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                              prior1d=m1d, dt=dt, emg=emg, dtprior=False,
                                               sa=sa, multkern=multkern, symkern=symkern,
-                                              ARD=ARD, T=T, constrain=constrain)
+                                              ARD=ARD, T=T, constrain=constrain,
+                                              n_prior_queries=n_prior_queries)
             models = modelsD['models']
             modelsprior = modelspriorD['models']
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
@@ -475,7 +477,8 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, co
                                              num_restarts=1, continue_opt=continue_opt,
                                                    prior1d=m1d, dt=dt, emg=emg, dtprior=True,
                                                     sa=sa, multkern=multkern, symkern=symkern,
-                                                    ARD=ARD, T=T)
+                                                    ARD=ARD, T=T, constrain=constrain,
+                                                    n_prior_queries=n_prior_queries)
                 modelsdtprior = modelsdtpriorD['models']
                 queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
                 for r,m in enumerate(modelsdtprior,n1-1):
@@ -494,7 +497,9 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, co
         'repeat': repeat,
         'true_chpair': trainsC.max_ch_2d(emg,dt),
         'multkern': multkern,
-        'symkern': symkern
+        'symkern': symkern,
+        'constrain': constrain,
+        'n_prior_queries': n_prior_queries
     }
     filename = os.path.join(exppath, 'chruns2d_dct.pkl')
     print("Saving stats dictionary to: {}".format(filename))

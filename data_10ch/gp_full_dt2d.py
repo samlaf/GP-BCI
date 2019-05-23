@@ -215,7 +215,7 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
     nrnd = range(*nrnd)
     synstr = 'syn{}'.format(''.join([str(n) for n in syn]))
     dtsstr = 'dts{}'.format(''.join([str(n) for n in dts]))
-    exppath = path.join('exps', '2d', 'exp{}'.format(uid), synstr, dtsstr, 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD))
+    exppath = path.join('exps', '2d', 'exp{}'.format(uid), synstr, dtsstr, 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'ARD{}'.format(ARD), 'constrain{}'.format(constrain))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     with open(os.path.join(exppath, 'jobid={}'.format(jobid)), 'w') as f:
