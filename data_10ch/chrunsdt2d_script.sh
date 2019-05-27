@@ -28,4 +28,4 @@ fi
 source /network/home/laferris/.bashrc
 conda activate gp
 # $4 should be a string of options
-python chruns_dt2d.py --syn 0 4 --dts 40 60 --uid $uid --jobid $SLURM_JOBID $4
+python chruns_dt2d.py --syn 0 4 --dts 20 40 60 --uid $uid --jobid $SLURM_JOBID $4

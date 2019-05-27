@@ -4,7 +4,7 @@ We fit GPs to the full dataset, testing different models and kernels
 
 from load_matlab import *
 from gp_full_1d import *
-from gp_full_2d import make_dataset_2d, build_prior
+from gp_full_2d import make_dataset_2d, build_prior, softmax
 import numpy as np
 import GPy
 import matplotlib.pyplot as plt
@@ -126,7 +126,6 @@ def train_model_seq_dt2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queri
     Y = []
 
     # PTS NEAR PRIOR'S 3 MAX CHS
-    assert(n_prior_queries**2 * len(dts) < n_random_pts)
     if m1d:
         # query pts around n_prior_queries max chs of prior1d
         nmaxchs = get_nmaxch(m1d, n=n_prior_queries)
@@ -145,6 +144,10 @@ def train_model_seq_dt2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queri
         # we need this so as to query the right total # of pts
         # (for loop below has - n_prior_queries**2)
         n_prior_queries = 0
+
+    # We need this in case n_prior_queries**2*len(dts) > n_random_pts
+    X = X[:n_random_pts]
+    Y = Y[:n_random_pts]
 
     # RANDOM PTS
     for _ in range(n_random_pts - n_prior_queries**2*len(dts)):
@@ -205,7 +208,7 @@ def get_acq_map(m, dts, k=2):
     acq = mean + k*std
     return X,acq
 
-def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=True, symkern=False, ARD=False, T=0.001, constrain=True):
+def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=True, symkern=False, ARD=False, T=0.001, constrain=True, n_prior_queries=3):
     if multkern: kerneltype='mult'
     else: kerneltype='add'
     if uid == '':
@@ -249,13 +252,13 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
                                            num_restarts=1, continue_opt=continue_opt, ARD=ARD,
                                            dts=dts, emg=emg, syn=syn, sa=sa,
                                            kerneltype=kerneltype, symkern=symkern, T=T,
-                                           constrain=constrain)
+                                           constrain=constrain,n_prior_queries=n_prior_queries)
             modelspriorD = train_model_seq_dt2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                                 num_restarts=1, continue_opt=continue_opt,
                                                 prior1d=prior1d, m1d=m1d1, dts=dts, emg=emg,
                                                 dtprior=False, sa=sa, kerneltype=kerneltype,
                                                 syn=syn, symkern=symkern, ARD=ARD, T=T,
-                                                constrain=constrain)
+                                                constrain=constrain, n_prior_queries=n_prior_queries)
             models = modelsD['models']
             modelsprior = modelspriorD['models']
             queriedchs[0][repeat][i] = [get_chpairdt(xydt,dts) for xydt in models[-1].X]
@@ -268,10 +271,11 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
                 vals[1][repeat][i][r] = m.predict(X)[0].reshape((-1))
             if dtprior:
                 modelsdtpriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
-                                             num_restarts=1, continue_opt=continue_opt,
-                                                   prior1d=m1d, dts=dts, emg=emg, dtprior=True,
+                                                    num_restarts=1, continue_opt=continue_opt,
+                                                    prior1d=m1d, dts=dts, emg=emg, dtprior=True,
                                                     sa=sa, kerneltype=kerneltype,
-                                                    symkern=symkern, ARD=ARD, T=T, syn=syn)
+                                                    symkern=symkern, ARD=ARD, T=T, syn=syn,
+                                                    n_prior_queries=n_prior_queries)
                 modelsdtprior = modelsdtpriorD['models']
                 queriedchs[2][repeat][i] = [get_chpairdt(xydt,dts) for xydt in modelsdtprior[-1].X]
                 for r,m in enumerate(modelsdtprior,n1-1):
