@@ -311,6 +311,8 @@ if __name__ == "__main__":
 
     X1d,Y1d = make_dataset_1d(trainsC, emg=0)
     m1d0, = train_models_1d(X1d,Y1d, ARD=True)
+    X1d,Y1d = make_dataset_1d(trainsC, emg=2)
+    m1d2, = train_models_1d(X1d,Y1d, ARD=True)
     X1d,Y1d = make_dataset_1d(trainsC, emg=4)
     m1d4, = train_models_1d(X1d,Y1d, ARD=True)
     prior1d = build_prior(m1d0,m1d4,input_dim=5)

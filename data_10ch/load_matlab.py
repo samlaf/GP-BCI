@@ -6,6 +6,7 @@ from datetime import datetime, date, time
 import matplotlib.gridspec as gridspec
 import random
 import itertools
+import os
 
 """
 # TODO #
@@ -63,7 +64,7 @@ class Trains:
         # each cell contains a 20x733 matrix (20 stimulations, 733 time series
         # emg response)
         if path_to_data:
-            filtmat = loadmat(path_to_data)
+            filtmat = loadmat(os.path.join(path_to_data, 'FilteredPairedTrains.mat'))
         else:
             filtmat = loadmat('FilteredPairedTrains.mat')
         filtdata = filtmat['gfilt_resp']
@@ -165,12 +166,12 @@ class Trains:
                 #self.emgdct[emg][ch1][ch2][dt][f]
         return z_grid
 
-    def build_f_grid_1d(self, f='meanmax'):
+    def build_f_grid_1d(self, emg=2, f='meanmax'):
         #only dt=0 makes sense in 1d so we don't need dt as argument
         grid = np.zeros((2,5))
         for ch in self.chs:
             x,y = ch2xy[ch]
-            grid[x][y] = self.trains[ch][ch][0][f]
+            grid[x][y] = self.emgdct[emg][ch][ch][0][f]
         return grid
 
     def get_resp(self, emg, dt, ch1, ch2, filldiag=True):
@@ -218,8 +219,8 @@ class Trains:
         x,y = np.unravel_index(grid.argmax(), grid.shape)
         return [self.chs[x], self.chs[y]]
 
-    def max_ch_1d(self):
-        grid = self.build_f_grid_1d()
+    def max_ch_1d(self, emg=2):
+        grid = self.build_f_grid_1d(emg=emg)
         x,y = np.unravel_index(grid.argmax(), grid.shape)
         return xy2ch[x][y]
 
