@@ -83,7 +83,7 @@ def get_maxchpairdt(m, dts):
     X = np.array(list(itertools.product(range(2),range(5), range(2), range(5), dts)))
     means,_ = m.predict(X)
     maxidx = means.argmax()
-    maxwxyz = np.unravel_index(maxidx, (2,5,2,5,2))
+    maxwxyz = np.unravel_index(maxidx, (2,5,2,5,len(dts)))
     maxchpair = get_chpairdtidx(maxwxyz, dts)
     return maxchpair
 
@@ -117,7 +117,7 @@ def plot_model_dt2d(m, k=-1, title="", plot_acq=False):
     #     plt.imshow(sm)
     #     plt.colorbar()
 
-def train_model_seq_dt2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries=3, num_restarts=1, ARD=False, prior1d=None, m1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dts=dts, dtprior=False, sa=True, symkern=False, kerneltype='mult', T=0.001, constrain=True):
+def train_model_seq_dt2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries=3, num_restarts=1, ARD=False, prior1d=None, m1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dts=dts, dtprior=False, sa=True, symkern=False, kerneltype='mult', T=0.001, constrain=True, k=2):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
@@ -168,7 +168,7 @@ def train_model_seq_dt2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queri
 
     # SEQUENTIAL QUERY PTS
     for _ in range(n_total_pts-n_random_pts):
-        nextx = get_next_x(m, dts, sa=sa, T=T)
+        nextx = get_next_x(m, dts, sa=sa, T=T, k=k)
         X.append(nextx)
         ch1 = xy2ch[nextx[0]][nextx[1]]
         ch2 = xy2ch[nextx[2]][nextx[3]]
@@ -218,7 +218,7 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
     nrnd = range(*nrnd)
     synstr = 'syn{}'.format(''.join([str(n) for n in syn]))
     dtsstr = 'dts{}'.format(''.join([str(n) for n in dts]))
-    exppath = path.join('exps', '2d', 'exp{}'.format(uid), synstr, dtsstr, 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'ARD{}'.format(ARD), 'constrain{}'.format(constrain))
+    exppath = path.join('exps', '2d', 'exp{}'.format(uid), synstr, dtsstr, 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'ARD{}'.format(ARD), 'constrain{}'.format(constrain), 'k{}'.format(k))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     with open(os.path.join(exppath, 'jobid={}'.format(jobid)), 'w') as f:
@@ -250,14 +250,14 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
             print(n1, "random init pts")
             modelsD = train_model_seq_dt2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                            num_restarts=1, continue_opt=continue_opt, ARD=ARD,
-                                           dts=dts, emg=emg, syn=syn, sa=sa,
+                                           dts=dts, emg=emg, syn=syn, sa=sa, k=k,
                                            kerneltype=kerneltype, symkern=symkern, T=T,
                                            constrain=constrain,n_prior_queries=n_prior_queries)
             modelspriorD = train_model_seq_dt2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                                 num_restarts=1, continue_opt=continue_opt,
                                                 prior1d=prior1d, m1d=m1d1, dts=dts, emg=emg,
                                                 dtprior=False, sa=sa, kerneltype=kerneltype,
-                                                syn=syn, symkern=symkern, ARD=ARD, T=T,
+                                                syn=syn, symkern=symkern, ARD=ARD, T=T, k=k,
                                                 constrain=constrain, n_prior_queries=n_prior_queries)
             models = modelsD['models']
             modelsprior = modelspriorD['models']
@@ -273,7 +273,7 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
                 modelsdtpriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                                     num_restarts=1, continue_opt=continue_opt,
                                                     prior1d=m1d, dts=dts, emg=emg, dtprior=True,
-                                                    sa=sa, kerneltype=kerneltype,
+                                                    sa=sa, kerneltype=kerneltype, k=k,
                                                     symkern=symkern, ARD=ARD, T=T, syn=syn,
                                                     n_prior_queries=n_prior_queries)
                 modelsdtprior = modelsdtpriorD['models']
@@ -295,7 +295,8 @@ def run_ch_stats_exps(trainsC, emg=emg, syn=None, dts=dts, uid='', jobid='', rep
         'repeat': repeat,
         'true_chpairdt': trainsC.max_ch_dt2d(emg,dts),
         'multkern': multkern,
-        'symkern': symkern
+        'symkern': symkern,
+        'k': k
     }
     filename = os.path.join(exppath, 'chrunsdt2d_dct.pkl')
     print("Saving stats dictionary to: {}".format(filename))

@@ -19,6 +19,7 @@ parser.add_argument('--ardkern', action='store_true')
 parser.add_argument('--test', action='store_true')
 parser.add_argument('--constrain', action='store_true')
 parser.add_argument('--n_prior_queries', type=int, default=3, help='number of initial queries driven by prior (instead of being random)')
+parser.add_argument('--k', type=float, default=2, help='k param in UCB (default=2)')
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -31,15 +32,17 @@ if __name__ == "__main__":
     print("nrnd: {}".format(args.nrnd))
     print("Use simulated annealing: {}".format(args.sa))
     print("Constrained: {}".format(args.constrain))
+    print("k={}".format(args.k))
     trainsC = Trains()
     if args.test:
         # We just want to test the whole setup, so run with minimal
         # configs to end quickly
-        D = run_ch_stats_exps(trainsC, syn=args.syn, dts=args.dts, uid=args.uid, jobid=args.jobid, repeat=1, ntotal=50, nrnd=[25,45,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T, constrain=args.constrain, n_prior_queries=args.n_prior_queries)
+        D = run_ch_stats_exps(trainsC, syn=args.syn, dts=args.dts, uid=args.uid, jobid=args.jobid, repeat=1, ntotal=50, nrnd=[25,45,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T, constrain=args.constrain, n_prior_queries=args.n_prior_queries, k=args.k)
     else:
         # Run the real things
         D = run_ch_stats_exps(trainsC, syn=args.syn, dts=args.dts, uid=args.uid,
                               jobid=args.jobid, repeat=args.repeat, dtprior=args.dtprior,
                               ntotal=args.ntotal, nrnd=args.nrnd, sa=args.sa, T=args.T,
                               symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern,
-                              constrain=args.constrain, n_prior_queries=args.n_prior_queries)
+                              constrain=args.constrain, n_prior_queries=args.n_prior_queries,
+                              k=args.k)
