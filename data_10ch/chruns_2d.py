@@ -9,7 +9,7 @@ parser.add_argument('--emg', type=int, default=4, choices=range(7), help='emg. b
 parser.add_argument('--repeat', type=int, default=25, help='Number of time to repeat loops (default: 25)')
 parser.add_argument('--dt', type=int, default=60, choices=(0,10,20,40,60,80,100), help='dt. one of (0,10,20,40,60,80,100)')
 parser.add_argument('--dtprior', action='store_true')
-parser.add_argument('--ntotal', type=int, default=100, help='Total # of query pts to use (default=100)')
+parser.add_argument('--ntotal', type=int, default=150, help='Total # of query pts to use (default=150)')
 parser.add_argument('--nrnd', type=int, nargs='+', default=[15,76,10], help='range of rnd query pts to try (default: [15,76,10]')
 parser.add_argument('--sa', action='store_true')
 parser.add_argument('--T', type=float, default=0.001, help='temperature for sa. (default=0.001)')
@@ -19,6 +19,7 @@ parser.add_argument('--ardkern', action='store_true')
 parser.add_argument('--test', action='store_true')
 parser.add_argument('--constrain', action='store_true')
 parser.add_argument('--n_prior_queries', type=int, default=3, help='number of initial queries driven by prior (instead of being random)')
+parser.add_argument('--k', type=int, default=2)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -30,15 +31,16 @@ if __name__ == "__main__":
     print("ntotal: {}".format(args.ntotal))
     print("nrnd: {}".format(args.nrnd))
     print("Use simulated annealing: {}".format(args.sa))
+    print("k = {}".format(args.k))
     trainsC = Trains(emg=args.emg)
     if args.test:
         # We just want to test the whole setup, so run with minimal
         # configs to end quickly
-        D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid, repeat=1, ntotal=50, nrnd=[15,35,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T, jobid=args.jobid)
+        D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid, repeat=1, ntotal=50, nrnd=[15,35,10], sa=args.sa, symkern=args.symkern, multkern=args.multkern, ARD=args.ardkern, T=args.T, jobid=args.jobid, k=args.k)
     else:
         # Run the real things
         D = run_ch_stats_exps(trainsC, emg=args.emg, dt=args.dt, uid=args.uid,
                               repeat=args.repeat, dtprior=args.dtprior, ntotal=args.ntotal,
                               nrnd=args.nrnd, sa=args.sa, symkern=args.symkern,
                               multkern=args.multkern, ARD=args.ardkern, T=args.T,
-                              constrain=args.constrain, jobid=args.jobid)
+                              jobid=args.jobid, k=args.k)

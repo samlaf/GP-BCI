@@ -133,8 +133,8 @@ def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1
             k.Mat52.lengthscale = k.Mat52_1.lengthscale = prior1d.Mat52.lengthscale
             k.Mat52.variance = k.Mat52_1.variance = prior1d.Mat52.variance
         if constrain:
-            k.Mat52.lengthscale.constrain_bounded(1,2)
-            k.Mat52_1.lengthscale.constrain_bounded(1,2)
+            k.Mat52.lengthscale.constrain_bounded(0.3,3)
+            k.Mat52_1.lengthscale.constrain_bounded(0.3,3)
             k.Mat52.variance.constrain_bounded(5e-4, 1e-3)
             k.Mat52_1.variance.constrain_bounded(5e-4, 1e-3)
     # Full SE
@@ -146,7 +146,7 @@ def train_models_2d(X,Y, kerneltype='add', symkern=False, num_restarts=1, prior1
             k.lengthscale[2:] = prior1d.Mat52.lengthscale
             k.variance = prior1d.Mat52.variance
         if constrain:
-            k.lengthscale.constrain_bounded(1,2)
+            k.lengthscale.constrain_bounded(0.3,3)
             k.variance.constrain_bounded(5e-4, 1e-3)
     else:
         raise Exception("kerneltype should be add or mult")
@@ -170,8 +170,8 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False, c
     k2 = GPy.kern.Matern52(input_dim=2, active_dims=[2,3], ARD=ARD)
     k = k1 + k2
     if constrain:
-            k.Mat52.lengthscale.constrain_bounded(1,2)
-            k.Mat52_1.lengthscale.constrain_bounded(1,2)
+            k.Mat52.lengthscale.constrain_bounded(0.3,3)
+            k.Mat52_1.lengthscale.constrain_bounded(0.3,3)
             k.Mat52.variance.constrain_bounded(5e-4, 1e-3)
             k.Mat52_1.variance.constrain_bounded(5e-4, 1e-3)
     if dtprior:
@@ -203,7 +203,7 @@ def make_add_model(X,Y,prior1d=None, prevmodel=None, ARD=False, dtprior=False, c
         m = GPy.models.GPRegression(X,Y,k)
     return m
 
-def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries=3, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False, T=0.001, constrain=True):
+def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries=3, num_restarts=1, ARD=False, prior1d=None, fix=False, continue_opt=True, emg=emg, syn=None, dt=dt, dtprior=False, sa=True, symkern=False, multkern=False, T=0.001, constrain=True, k=2):
     trains = trainsC.get_emgdct(emg)
     if dtprior:
         assert(continue_opt), "if dtprior is True, must set continue_opt to true"
@@ -252,7 +252,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
         m.optimize_restarts(num_restarts=num_restarts)
     models.append(m)
     for _ in range(n_total_pts-n_random_pts):
-        nextx = get_next_x(m, sa=sa, T=T)
+        nextx = get_next_x(m, sa=sa, T=T, k=k)
         X.append(nextx)
         ch1 = xy2ch[nextx[0]][nextx[1]]
         ch2 = xy2ch[nextx[2]][nextx[3]]
@@ -421,13 +421,13 @@ def get_maxchpair(m):
     maxchpair = get_ch_pair(maxwxyz)
     return maxchpair
 
-def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=100, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True, n_prior_queries=3):
+def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, continue_opt=True, k=2, dtprior=False, ntotal=150, nrnd = [15,76,10], sa=True, multkern=False, symkern=False, ARD=False, T=0.001, constrain=True, n_prior_queries=3):
     if uid == '':
         uid = random.randrange(10000)
     assert(type(nrnd) is list and len(nrnd) == 3)
     trains = trainsC.get_emgdct(emg)
     nrnd = range(*nrnd)
-    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'sa{}'.format(sa), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD), 'constrain{}'.format(constrain))
+    exppath = path.join('exps', '2d', 'exp{}'.format(uid), 'emg{}'.format(emg), 'dt{}'.format(dt), 'multkern{}'.format(multkern), 'symkern{}'.format(symkern), 'ARD{}'.format(ARD), 'k{}'.format(k))
     if not path.isdir(exppath):
         os.makedirs(exppath)
     if jobid:
@@ -441,7 +441,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, co
     # Build 1d model for modelsprior
     X1d,Y1d = make_dataset_1d(trainsC, emg=emg)
     X = np.array(list(itertools.product(range(2),range(5), range(2), range(5))))
-    m1d, = train_models_1d(X1d,Y1d, ARD=False)
+    m1d = train_model_1d(X1d,Y1d, ARD=ARD)
     # queriedchs contains <n_ch> queried channels for all <repeat> runs of <ntotal>
     # queries with <nrnd> initial random pts for each of <n_models> models
     queriedchs = np.zeros((n_models, repeat, len(nrnd), ntotal, n_ch))
@@ -455,13 +455,13 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, co
                                          num_restarts=1, continue_opt=continue_opt, ARD=ARD,
                                          dt=dt, emg=emg, sa=sa, multkern=multkern,
                                          symkern=symkern, T=T, constrain=constrain,
-                                         n_prior_queries=n_prior_queries)
+                                         n_prior_queries=n_prior_queries, k=k)
             modelspriorD = train_model_seq_2d(trainsC,n_random_pts=n1, n_total_pts=ntotal,
                                              num_restarts=1, continue_opt=continue_opt,
                                              prior1d=m1d, dt=dt, emg=emg, dtprior=False,
                                               sa=sa, multkern=multkern, symkern=symkern,
                                               ARD=ARD, T=T, constrain=constrain,
-                                              n_prior_queries=n_prior_queries)
+                                              n_prior_queries=n_prior_queries, k=k)
             models = modelsD['models']
             modelsprior = modelspriorD['models']
             queriedchs[0][repeat][i] = [get_ch_pair(xy) for xy in models[-1].X]
@@ -478,7 +478,7 @@ def run_ch_stats_exps(trainsC, emg=emg, dt=dt, uid='', jobid=None, repeat=25, co
                                                    prior1d=m1d, dt=dt, emg=emg, dtprior=True,
                                                     sa=sa, multkern=multkern, symkern=symkern,
                                                     ARD=ARD, T=T, constrain=constrain,
-                                                    n_prior_queries=n_prior_queries)
+                                                    n_prior_queries=n_prior_queries, k=k)
                 modelsdtprior = modelsdtpriorD['models']
                 queriedchs[2][repeat][i] = [get_ch_pair(xy) for xy in modelsdtprior[-1].X]
                 for r,m in enumerate(modelsdtprior,n1-1):
@@ -517,7 +517,7 @@ def run_dist_exps(args):
     trains = trainsC.get_emgdct(args.emg)
 
     X1d,Y1d = make_dataset_1d(trains)
-    m1d, = train_models_1d(X1d,Y1d, ARD=False)
+    m1d = train_model_1d(X1d,Y1d, ARD=False)
 
     X,Y = make_dataset_2d(trainsC, emg=args.emg, dt=args.dt)
     
@@ -606,8 +606,8 @@ if __name__ == "__main__":
 
     emg=4
     X1d,Y1d = make_dataset_1d(trainsC, emg=4)
-    m1d, = train_models_1d(X1d,Y1d, ARD=False)
-    m1dard, = train_models_1d(X1d,Y1d, ARD=True)
+    m1d = train_model_1d(X1d,Y1d, ARD=False)
+    m1dard = train_model_1d(X1d,Y1d, ARD=True)
 
     # model_names = 'all'
     # X,Y = make_dataset_2d(trainsC, emg=4, dt=10, means=True)
