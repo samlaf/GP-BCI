@@ -46,7 +46,7 @@ N_EMGS = 7
 
 class Trains:
 
-    def __init__(self, emg = EMG, N_EMGS = N_EMGS, path_to_data=None, clean_thresh=None):
+    def __init__(self, emg = EMG, N_EMGS = N_EMGS, path_to_data=None, clean_thresh=None, verbose=True):
         self.chs = CHS
         self.n_ch = len(self.chs)
         self.dts = DTS
@@ -121,8 +121,9 @@ class Trains:
                             i=0
                             while i<len(maxs):
                                 if maxs[i] > clean_thresh:
-                                    print("Removing resp with max {}".format(maxs[i]))
-                                    print("emg {}, ch1 {}, ch2 {}, dt {}".format(emg,ch1,ch2,dt))
+                                    if verbose:
+                                        print("Removing resp with max {}".format(maxs[i]))
+                                        print("emg {}, ch1 {}, ch2 {}, dt {}".format(emg,ch1,ch2,dt))
                                     count+=1
                                     for other_emg in range(N_EMGS):
                                         data = self.emgdct[other_emg][ch1][ch2][dt]['data']
@@ -133,7 +134,8 @@ class Trains:
                                         self.emgdct[other_emg][ch1][ch2][dt]['meanmax'] = maxs.mean()
                                         self.emgdct[other_emg][ch1][ch2][dt]['stdmax'] = maxs.std()
                                 i+=1
-            print("Removed {} resps in total from dataset".format(count))
+            if verbose:
+                print("Removed {} resps in total from dataset".format(count))
         self.trains = self.emgdct[emg]
 
     ######### GETTERS ############
@@ -396,14 +398,15 @@ class Trains:
                 fig.add_subplot(ax)
 
 
-    def plot_response_matrix(self, emg=2, syn=None, dt=40, tau=40):
+    def plot_response_matrix(self, emg=2, syn=None, dt=40, tau=40, title=True):
         if syn is None:
             syn = (emg, None)
             emg1 = emg2 = emg
         else:
             emg1,emg2 = syn
         fig = plt.figure()
-        plt.suptitle("Matrix of responses for EMG1={},EMG2={} with dt={} (1stch left, 2ndch top)".format(*syn, dt))
+        if title:
+            plt.suptitle("Matrix of responses for EMG1={},EMG2={} with dt={} (1stch left, 2ndch top)".format(*syn, dt))
         gs = gridspec.GridSpec(12,12)
         # We first plot the 1d responses on left and top
         for i,ch in enumerate(self.chs):

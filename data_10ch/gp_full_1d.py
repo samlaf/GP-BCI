@@ -54,13 +54,13 @@ def make_dataset_1d(trainsC, emg=2, mean=False, n=20):
     Y = np.array(Y).reshape((-1,1))
     return X,Y
 
-def train_model_1d(X,Y, num_restarts=3, ARD=True, constrain=[0.3,3.0]):
+def train_model_1d(X,Y, num_restarts=3, ARD=True, constrain=[0.3,3.0], verbose=True):
 
     matk = GPy.kern.Matern52(input_dim=2, ARD=ARD)
     if constrain:
-        matk.lengthscale.constrain_bounded(*constrain)
+        matk.lengthscale.constrain_bounded(*constrain, warning=verbose)
     m = GPy.models.GPRegression(X,Y,matk)
-    m.optimize_restarts(num_restarts=num_restarts)
+    m.optimize_restarts(num_restarts=num_restarts, verbose=verbose)
 
     return m
 
@@ -114,7 +114,7 @@ def plot_mo_model(m, plot_data=True):
 
 ##### end of co-kriging section ######
 
-def train_model_seq(trainsC, emg=2, n_random_pts=10, n_total_pts=15, ARD=True, num_restarts=3, continue_opt=False, k=2, constrain=[0.3,3.0]):
+def train_model_seq(trainsC, emg=0, n_random_pts=10, n_total_pts=25, ARD=True, num_restarts=3, continue_opt=False, k=2, constrain=[0.3,3.0], verbose=True):
     X = []
     Y = []
     for _ in range(n_random_pts):
@@ -124,11 +124,11 @@ def train_model_seq(trainsC, emg=2, n_random_pts=10, n_total_pts=15, ARD=True, n
         Y.append(resp)
     matk = GPy.kern.Matern52(input_dim=2, ARD=ARD)
     if constrain:
-        matk.lengthscale.constrain_bounded(*constrain)
+        matk.lengthscale.constrain_bounded(*constrain, warning=verbose)
     #Make model
     models = []
     m = GPy.models.GPRegression(np.array(X),np.array(Y)[:,None],matk)
-    m.optimize_restarts(num_restarts=num_restarts, messages=False)
+    m.optimize_restarts(num_restarts=num_restarts, verbose=verbose)
     # We optimize this kernel once and then use it for all future models
     optim_params = m[:]
     models.append(m)
@@ -142,7 +142,7 @@ def train_model_seq(trainsC, emg=2, n_random_pts=10, n_total_pts=15, ARD=True, n
         m[:] = optim_params
         ## TODO: also set gp's noise variance to be same as previous!
         if continue_opt:
-            m.optimize_restarts(num_restarts=num_restarts, messages=False)
+            m.optimize_restarts(num_restarts=num_restarts, verbose=verbose)
         models.append(m)
     return models
 
@@ -231,10 +231,11 @@ def get_next_x(m, k=2):
     xy = ch2xy[maxch]
     return xy
     
-def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
-    print(m)
-    print(m.kern)
-    print(m.kern.lengthscale)
+def plot_model_1d(m, title=None, plot_acq=False, plot_data=True, verbose=True):
+    if verbose:
+        print(m)
+        print(m.kern)
+        print(m.kern.lengthscale)
 
     fig, axes = plt.subplots(2,1,
                              sharex=True,
@@ -269,10 +270,9 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True):
         #     ax.plot(j, trains[ch][ch][dt]['meanmax'], 'r+')
         #     ax.errorbar(j, trains[ch][ch][dt]['meanmax'], yerr=2*trains[ch][ch][dt]['stdmax'],ecolor='r')
 
-def plot_model_surface(m, plot_data=True):
-    extra_lim=1
-    x = np.linspace(0-extra_lim,1+extra_lim,50)
-    y = np.linspace(0-extra_lim,4+extra_lim,50)
+def plot_model_surface(m, ax=None, plot_data=True, zlim=None, extra_xlim=1, plot_colorbar=True):
+    x = np.linspace(0-extra_xlim,1+extra_xlim,50)
+    y = np.linspace(0-extra_xlim,4+extra_xlim,50)
     x,y = np.meshgrid(x,y)
     x_,y_ = x.ravel()[:,None], y.ravel()[:,None]
     z = np.hstack((x_,y_))
@@ -280,16 +280,27 @@ def plot_model_surface(m, plot_data=True):
     std = np.sqrt(var)
     mean,std = mean.reshape(50,50), std.reshape(50,50)
 
-    fig2 = plt.figure()
-    ax = fig2.gca(projection='3d')
-    ax.set_title("Color represents std")
+    if ax is None:
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
     norm = plt.Normalize()
     surf = ax.plot_surface(x, y, mean, linewidth=0, antialiased=False, facecolors=cm.jet(norm(std)))
+    if zlim:
+        ax.set_zlim([0,0.014])
     if plot_data:
         ax.scatter(m.X[:,0], m.X[:,1], m.Y, c='g')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('V')
+    ax.set_xticks([0,1])
+    ax.set_yticks([0,1,2,3,4])
     m = cm.ScalarMappable(cmap=plt.cm.jet, norm=norm)
     m.set_array([])
-    plt.colorbar(m)
+    if plot_colorbar:
+        cbaxes = fig.add_axes([0.1, 0.1, 0.03, 0.8])  # This is the position for the colorbar
+        clb = plt.colorbar(m, cax = cbaxes)
+        clb.ax.yaxis.set_ticks_position('left')
+        clb.ax.set_title('std')
 
 
 def l2dist(m1, m2):
@@ -428,17 +439,16 @@ def run_ch_stats_exps(trainsC, emgs=[0,2,4], repeat=25, uid=None, jobid=None, co
 if __name__ == '__main__':
     args = parser.parse_args()
     trainsC = Trains(emg=args.emg)
-    # D = run_ch_stats_exps(trainsC, uid=2)
 
-    # # co-kriging model
-    # X,Y = make_mo_dataset(trainsC, emgs=[0,4])
-    # m = train_mo_model(X,Y, ARD=False)
-    # plot_mo_model(m)
-    # plt.show()
+    for n in [25,20,15,10,5,1]:
+        m, = train_model_seq(trainsC, emg=0, n_random_pts=n, n_total_pts=n,k=6)
+        plot_model_surface(m, plot_data=False, zlim=[0,0.014], plot_colorbar=False)
+    plt.show()
 
-    for emg in [0,2,4]:
-        X,Y = make_dataset_1d(trainsC, emg=emg)
-        m = train_model_1d(X,Y)
-        plot_model_1d(m, title="emg={}. ard".format(emg))
+    emg=0
+    X,Y = make_dataset_1d(trainsC, emg=emg)
+    m = train_model_1d(X,Y)
+    print(m.kern.lengthscale)
+    plot_model_surface(m, plot_data=False, plot_colorbar=False)
     plt.show()
     
