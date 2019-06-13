@@ -380,7 +380,7 @@ def run_ch_stats_exps(trainsC, emgs=[0,2,4], repeat=25, uid=None, jobid=None, co
     # npy array, to later plot in jupyter notebook
     if uid is None:
         uid = random.randrange(99999)
-    exppath = path.join('exps', '1d', 'chruns', 'exp{}'.format(uid), 'k{}'.format(k), 'ARD{}'.format(ARD))
+    exppath = path.join('exps', '1d', 'exp{}'.format(uid), 'k{}'.format(k), 'ARD{}'.format(ARD))
     print("Will save in path", exppath)
     if not path.isdir(exppath):
         os.makedirs(exppath)
