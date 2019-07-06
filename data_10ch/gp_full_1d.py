@@ -238,20 +238,16 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True, verbose=True):
         print(m.kern.lengthscale)
 
     fig, axes = plt.subplots(2,1,
-                             sharex=True,
+                             sharex=False,
                              sharey=True)
     #lengthscales = [m.Mat52.lengthscale[i] for i in range(len(m.Mat52.lengthscale))]
     fig.suptitle(title)
     #"*len(lengthscales)).format(title,*lengthscales))
     for i,ax in zip([0,1],axes):
-        title = 'Channels {}'.format(xy2ch[i])
         m.plot(ax=ax, fixed_inputs=[(0,i)],
-               plot_data=False, title=title,
-               lower=17, upper=83, legend=False)
-        #m.plot_confidence(ax=ax, fixed_inputs=[(0,i)], label='std', lower=17, upper=83)
-        #m.plot_mean(ax=ax, fixed_inputs=[(0,i)])
-        # Plot data (m.plot plots all of the data in every slice, which is
-        # wrong)
+               plot_data=False, lower=17, upper=83, legend=False)
+        ax.set_xticks([0,1,2,3,4])
+        ax.set_xticklabels([[i,j] for j in range(5)])
     if plot_data:
         t=1
         norm = colors.Normalize(vmin=-50, vmax=len(m.X))
@@ -264,11 +260,6 @@ def plot_model_1d(m, title=None, plot_acq=False, plot_data=True, verbose=True):
         axes[1].plot(acqmap[:5], c='y', label='acq fct')
         axes[0].plot(acqmap[5:], c='y', label='acq fct')
     axes[0].legend()
-    axes[0].set_xticks([0,1,2,3,4])
-        # for j,ch in enumerate(xy2ch[i]):
-        #     ax.plot(np.ones(20)*j,trains[ch][ch][dt]['data'].max(axis=1),'x')
-        #     ax.plot(j, trains[ch][ch][dt]['meanmax'], 'r+')
-        #     ax.errorbar(j, trains[ch][ch][dt]['meanmax'], yerr=2*trains[ch][ch][dt]['stdmax'],ecolor='r')
 
 def plot_model_surface(m, ax=None, plot_data=True, zlim=None, extra_xlim=1, plot_colorbar=True):
     x = np.linspace(0-extra_xlim,1+extra_xlim,50)

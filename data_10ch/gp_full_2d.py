@@ -227,6 +227,7 @@ def train_model_seq_2d(trainsC, n_random_pts=10, n_total_pts=15, n_prior_queries
         # we need this so as to query the right total # of pts
         # (for loop below has - n_prior_queries**2)
         n_prior_queries = 0
+
     for _ in range(n_random_pts - n_prior_queries**2):
         ch1 = random.choice(CHS)
         ch2 = random.choice(CHS)

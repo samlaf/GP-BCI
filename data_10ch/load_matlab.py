@@ -398,7 +398,7 @@ class Trains:
                 fig.add_subplot(ax)
 
 
-    def plot_response_matrix(self, emg=2, syn=None, dt=40, tau=40, title=True):
+    def plot_response_matrix(self, emg=2, syn=None, dt=40, tau=40, title=True, plot_green=True, plot_red=True):
         if syn is None:
             syn = (emg, None)
             emg1 = emg2 = emg
@@ -410,21 +410,33 @@ class Trains:
         gs = gridspec.GridSpec(12,12)
         # We first plot the 1d responses on left and top
         for i,ch in enumerate(self.chs):
+            # top
             ax = plt.subplot(gs[0,i+2])
             ax.set_ylim([0,0.05])
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_title(ch)
+            #ax.set_title(ch2xy[ch])
             ax.plot(self.emgdct[emg2][ch][ch][0]['data'].T)
             ax.text(0,0,"{:.2}".format(self.emgdct[emg2][ch][ch][0]['meanmax']))
 
+            # channel labels top
+            ax = plt.subplot(gs[1,i+2])
+            ax.text(0,0.25,ch2xy[ch])
+            ax.axis('off')
+
+            # left side
             ax = plt.subplot(gs[i+2,0])
             ax.set_ylim([0,0.05])
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_ylabel(ch)
+            #ax.set_ylabel(ch2xy[ch])
             ax.plot(self.emgdct[emg1][ch][ch][0]['data'].T)
             ax.text(0,0,"{:.2}".format(self.emgdct[emg1][ch][ch][0]['meanmax']))
+
+            # channel labels left
+            ax = plt.subplot(gs[i+2,1])
+            ax.text(0.25,0.25,ch2xy[ch])
+            ax.axis('off')
 
         
         maxch1,maxch2 = self.max_ch_2d(syn=syn,dt=dt)
@@ -440,9 +452,11 @@ class Trains:
                 if data.size != 0:
                     plt.plot(data.T)
                 mm = float(self.synergy_meanmax(*syn,ch1,ch2,dt,tau=tau))
-                if ch1==maxch1 and ch2==maxch2:
-                    bbox = dict(facecolor='green', alpha=0.5)
-                elif mm > maxr - 0.005:
+                # if ch1==maxch1 and ch2==maxch2:
+                #     bbox = dict(facecolor='green', alpha=0.5)
+                if plot_green and mm > maxr - 0.002:
+                    bbox = dict(facecolor='green',)
+                elif plot_red and mm > maxr - 0.005 and mm < maxr - 0.002:
                     bbox = dict(facecolor='red', alpha=0.5)
                 plt.text(0,0,"{:.2}".format(mm), bbox=bbox)
 
@@ -471,12 +485,13 @@ class Trains:
 
 if __name__ == "__main__":
     trainsC = Trains(emg=EMG, clean_thresh=0.06)
+    trainsC.plot_response_matrix(emg=4,dt=60)
     #trainsC = Trains(emg=EMG)
     #trainsC.plot_max_val_stats()
     #trainsC.plot_individual_resps(17,13)
     # trainsC.synergy(0,4,13,13,dt=0)
-    for dt in [0,40,60,100]:
-        trainsC.plot_response_matrix(emg=4, dt=dt)
+    # for dt in [0,40,60,100]:
+    #     trainsC.plot_response_matrix(emg=4, dt=dt)
     # trainsC.plot_response_matrix(syn=(0,4),dt=40)
     # trainsC.plot_all_pair_responses(dt=40,n=5)
     # trainsC.plot_ch2emg_resps(avgResp=True)
